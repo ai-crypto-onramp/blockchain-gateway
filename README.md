@@ -1,6 +1,7 @@
 # Blockchain Gateway
 
 ![CI](https://github.com/ai-crypto-onramp/blockchain-gateway/actions/workflows/ci.yml/badge.svg)
+[![codecov](https://codecov.io/gh/ai-crypto-onramp/blockchain-gateway/branch/main/graph/badge.svg)](https://codecov.io/gh/ai-crypto-onramp/blockchain-gateway)
 
 Per-chain broadcast, gas prepayment/estimation, confirmation tracking, reorg handling, and mempool monitoring for the crypto on-ramp.
 
