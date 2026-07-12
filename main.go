@@ -5,10 +5,20 @@ import (
 	"net/http"
 )
 
-func main() {
+// newMux builds the HTTP routing table for the service.
+func newMux() *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", healthz)
-	_ = http.ListenAndServe(":8080", mux)
+	return mux
+}
+
+// run starts the HTTP server on the given address and blocks until it exits.
+func run(addr string) error {
+	return http.ListenAndServe(addr, newMux())
+}
+
+func main() {
+	_ = run(":8080")
 }
 
 func healthz(w http.ResponseWriter, r *http.Request) {
