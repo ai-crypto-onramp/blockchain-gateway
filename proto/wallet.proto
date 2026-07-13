@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+package ai_crypto_onramp.wallet.v1;
+
+option go_package = "github.com/ai-crypto-onramp/blockchain-gateway/internal/walletclient/proto;walletpb";
+
+// Wallet Management service — internal-only gRPC surface used by the
+// Blockchain Gateway for nonce allocation and gas prepayment. The gateway
+// currently uses a hand-written HTTP/JSON client (see client.go); this
+// proto is the canonical schema for a future generated client.
+service WalletManagement {
+  rpc FundSender(FundSenderRequest) returns (FundSenderResponse);
+  rpc AllocateNonce(AllocateNonceRequest) returns (AllocateNonceResponse);
+}
+
+message FundSenderRequest {
+  string chain_id = 1;
+  string addr = 2;
+  string amount = 3; // decimal string in base units
+}
+
+message FundSenderResponse {
+  bool ok = 1;
+  string funding_tx = 2;
+  string error = 3;
+}
+
+message AllocateNonceRequest {
+  string chain_id = 1;
+  string addr = 2;
+}
+
+message AllocateNonceResponse {
+  uint64 nonce = 1;
+}

@@ -1,22 +1,46 @@
-.PHONY: build test run lint docker-build docker-run clean
+.PHONY: build test test-race test-integration lint vet coverage run docker-up docker-down e2e-smoke clean
 
 build:
 	go build -o bin/server .
 
 test:
+	go test ./... -coverprofile=coverage.out -coverpkg=./...
+
+test-race:
 	go test ./... -race -coverprofile=coverage.out -coverpkg=./...
+
+test-integration:
+	docker compose up -d postgres redis
+	@echo "Waiting for Postgres + Redis to be healthy..."
+	@sleep 5
+	DB_URL=postgres://gateway:gateway@localhost:5432/gateway?sslmode=disable \
+	REDIS_URL=redis://localhost:6379/0 \
+	CHAINS_SUPPORTED=ethereum \
+	RPC_URLS_ETHEREUM=http://localhost:8545 \
+	FINALITY_BLOCKS_ETHEREUM=64 \
+	go test ./... -race -coverprofile=coverage.out -coverpkg=./... -tags=integration
+	docker compose down
+
+lint:
+	@which golangci-lint > /dev/null 2>&1 && golangci-lint run ./... || go vet ./...
+
+vet:
+	go vet ./...
+
+coverage: test
+	go tool cover -func=coverage.out | tail -1
 
 run:
 	go run .
 
-lint:
-	go vet ./...
+docker-up:
+	docker compose up -d --build
 
-docker-build:
-	docker build -t ai-crypto-onramp/blockchain-gateway .
+docker-down:
+	docker compose down
 
-docker-run:
-	docker run --rm -p 8080:8080 ai-crypto-onramp/blockchain-gateway
+e2e-smoke:
+	go test ./test/e2e/ -v -race -timeout 30s
 
 clean:
 	rm -rf bin/ coverage.out

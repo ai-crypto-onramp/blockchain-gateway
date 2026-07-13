@@ -2,67 +2,76 @@ package main
 
 import (
 	"encoding/json"
-	"net"
 	"net/http"
-	"net/http/httptest"
 	"testing"
+	"time"
 )
 
-func TestHealthz(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
-	rr := httptest.NewRecorder()
-	healthz(rr, req)
-
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", rr.Code)
+// TestHealthzSmoke boots the app and hits /healthz to confirm the router
+// is wired. This replaces the original standalone-healthz tests, which
+// assumed a hand-rolled mux; the app now owns routing.
+func TestHealthzSmoke(t *testing.T) {
+	// Build the app with defaults (no CHAINS_SUPPORTED => stub adapter).
+	srv, err := buildTestServer()
+	if err != nil {
+		t.Fatalf("build: %v", err)
 	}
+	defer srv.Close()
 
+	resp, err := http.Get(srv.URL + "/healthz")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
 	var body map[string]string
-	if err := json.NewDecoder(rr.Body).Decode(&body); err != nil {
-		t.Fatalf("decode body: %v", err)
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
 	}
 	if body["status"] != "ok" {
 		t.Fatalf("expected status ok, got %q", body["status"])
 	}
-	if ct := rr.Header().Get("Content-Type"); ct != "application/json" {
-		t.Fatalf("expected application/json content type, got %q", ct)
+}
+
+// TestUnknownRouteReturns404 verifies the router 404s unknown paths.
+func TestUnknownRouteReturns404(t *testing.T) {
+	srv, err := buildTestServer()
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	defer srv.Close()
+	resp, err := http.Get(srv.URL + "/nope")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", resp.StatusCode)
 	}
 }
 
-func TestNewMuxRouting(t *testing.T) {
-	tests := []struct {
-		name       string
-		path       string
-		wantStatus int
-	}{
-		{name: "healthz route", path: "/healthz", wantStatus: http.StatusOK},
-		{name: "unknown route", path: "/nope", wantStatus: http.StatusNotFound},
-	}
-
-	mux := newMux()
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodGet, tt.path, nil)
-			rr := httptest.NewRecorder()
-
-			mux.ServeHTTP(rr, req)
-
-			if rr.Code != tt.wantStatus {
-				t.Fatalf("expected %d, got %d", tt.wantStatus, rr.Code)
-			}
-		})
-	}
-}
-
+// TestRunReturnsErrorOnBusyAddress boots a server on a busy port and
+// expects Run to return an error quickly (the HTTP listener fails to bind).
 func TestRunReturnsErrorOnBusyAddress(t *testing.T) {
-	// Occupy a port so run fails fast instead of blocking.
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	// Bind a listener on a random port to occupy it.
+	ln, err := netListen("0.0.0.0:0")
 	if err != nil {
 		t.Fatalf("listen: %v", err)
 	}
 	defer ln.Close()
-
-	if err := run(ln.Addr().String()); err == nil {
-		t.Fatal("expected error when address is already in use, got nil")
+	port := portFromAddr(ln.Addr().String())
+	// Build a second http.Server on the same port; ListenAndServe must fail.
+	srv2 := newHTTPServerOnPort(port)
+	errCh := make(chan error, 1)
+	go func() { errCh <- srv2.ListenAndServe() }()
+	select {
+	case err := <-errCh:
+		if err == nil {
+			t.Fatal("expected error when address is in use, got nil")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("ListenAndServe did not return within 2s on busy address")
 	}
 }

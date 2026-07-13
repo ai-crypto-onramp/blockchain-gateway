@@ -265,14 +265,32 @@ make build
 # Run (requires PostgreSQL + Redis + RPC provider env vars)
 make run
 
-# Run tests
+# Run tests (no Docker required; uses in-memory stores)
 make test
 
-# Run linter
+# Run tests with -race
+make test-race
+
+# Run linter (golangci-lint if installed, else go vet)
 make lint
+
+# Run go vet
+make vet
+
+# Print coverage summary
+make coverage
 
 # Run integration tests (spins up Postgres + Redis via docker-compose)
 make test-integration
+
+# Run the e2e smoke test (broadcast -> confirm -> finalize on a stub chain)
+make e2e-smoke
+
+# Bring up Postgres + Redis + the gateway via docker-compose
+make docker-up
+
+# Tear down the docker-compose stack
+make docker-down
 
 # Generate gRPC/adapter mocks
 make generate
