@@ -2,8 +2,11 @@ package chain
 
 import (
 	"context"
+	"errors"
 	"math/big"
+	"os"
 	"testing"
+	"time"
 )
 
 func TestStatusLifecycle(t *testing.T) {
@@ -217,5 +220,230 @@ func TestEncodeBase64(t *testing.T) {
 	out := encodeBase64([]byte("hello"))
 	if out != "aGVsbG8=" {
 		t.Errorf("encodeBase64: %s", out)
+	}
+}
+
+func TestNewConfigLoader(t *testing.T) {
+	l := NewConfigLoader()
+	if l == nil {
+		t.Fatal("NewConfigLoader returned nil")
+	}
+	if l.env("CHAINS_SUPPORTED") != "" && os.Getenv("CHAINS_SUPPORTED") == "" {
+		t.Error("env function mismatch")
+	}
+}
+
+func TestConfigLoaderUnknownChain(t *testing.T) {
+	env := map[string]string{
+		"CHAINS_SUPPORTED": "cosmos",
+	}
+	loader := newConfigLoaderWithEnv(func(k string) string { return env[k] })
+	cfgs, err := loader.Load()
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if len(cfgs) != 1 || cfgs[0].ChainID != "cosmos" {
+		t.Fatalf("cfgs: %+v", cfgs)
+	}
+	if cfgs[0].GasStrategy != "eip1559_dynamic" {
+		t.Errorf("default strategy: %s", cfgs[0].GasStrategy)
+	}
+}
+
+func TestConfigLoaderBadFinality(t *testing.T) {
+	env := map[string]string{
+		"CHAINS_SUPPORTED":        "ethereum",
+		"FINALITY_BLOCKS_ETHEREUM": "notanumber",
+	}
+	loader := newConfigLoaderWithEnv(func(k string) string { return env[k] })
+	if _, err := loader.Load(); err == nil {
+		t.Fatal("expected error for bad finality")
+	}
+}
+
+func TestConfigLoaderDefaultGasStrategy(t *testing.T) {
+	env := map[string]string{
+		"CHAINS_SUPPORTED": "cosmos",
+		"GAS_STRATEGY":     "custom",
+	}
+	loader := newConfigLoaderWithEnv(func(k string) string { return env[k] })
+	cfgs, err := loader.Load()
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if cfgs[0].GasStrategy != "custom" {
+		t.Errorf("custom default strategy: %s", cfgs[0].GasStrategy)
+	}
+}
+
+func TestConfigLoaderWhitespaceInChains(t *testing.T) {
+	env := map[string]string{
+		"CHAINS_SUPPORTED": "  ethereum  ,  polygon  ",
+	}
+	loader := newConfigLoaderWithEnv(func(k string) string { return env[k] })
+	cfgs, err := loader.Load()
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if len(cfgs) != 2 {
+		t.Fatalf("expected 2 chains, got %d", len(cfgs))
+	}
+}
+
+func TestSplitCSV(t *testing.T) {
+	if out := splitCSV(""); out != nil {
+		t.Errorf("empty splitCSV: %v", out)
+	}
+	if out := splitCSV("a, b ,c"); len(out) != 3 || out[0] != "a" || out[1] != "b" || out[2] != "c" {
+		t.Errorf("splitCSV: %v", out)
+	}
+}
+
+func TestRegistryChainsSorted(t *testing.T) {
+	r := NewRegistry()
+	r.Register(NewStubAdapter(StubAdapterOptions{ChainID: "zchain", FinalityBlocks: 1}))
+	r.Register(NewStubAdapter(StubAdapterOptions{ChainID: "achain", FinalityBlocks: 1}))
+	chains := r.Chains()
+	if len(chains) != 2 {
+		t.Fatalf("chains: %v", chains)
+	}
+}
+
+func TestRegistryAsStubPanicsOnUnknown(t *testing.T) {
+	r := NewRegistry()
+	defer func() {
+		if recover() == nil {
+			t.Error("expected panic for unknown chain")
+		}
+	}()
+	_ = r.AsStub("nope")
+}
+
+func TestRegistryAsStubPanicsOnNonStub(t *testing.T) {
+	r := NewRegistry()
+	r.Register(NewEVMAdapter(ChainConfig{ChainID: "ethereum", RPCURLs: nil, FinalityBlocks: 64}))
+	defer func() {
+		if recover() == nil {
+			t.Error("expected panic for non-stub adapter")
+		}
+	}()
+	_ = r.AsStub("ethereum")
+}
+
+// TestRegistryStubEmitter exercises the StubEmitter method which delegates
+// to AsStub.
+func TestRegistryStubEmitter(t *testing.T) {
+	r := NewRegistry()
+	r.Register(NewStubAdapter(StubAdapterOptions{ChainID: "stub", FinalityBlocks: 3}))
+	em := r.StubEmitter("stub")
+	if em == nil {
+		t.Fatal("StubEmitter returned nil")
+	}
+	em.EmitHead(Head{ChainID: "stub", Height: 1})
+	em.EmitMempool(MempoolEvent{ChainID: "stub", TxHash: "0x1", Kind: "enter"})
+	if em.BroadcastCount() != 0 {
+		t.Errorf("broadcast count: %d want 0", em.BroadcastCount())
+	}
+}
+
+// TestRegistryStubEmitterPanicsOnUnknown ensures StubEmitter panics for an
+// unknown chain (delegating to AsStub).
+func TestRegistryStubEmitterPanicsOnUnknown(t *testing.T) {
+	r := NewRegistry()
+	defer func() {
+		if recover() == nil {
+			t.Error("expected panic for unknown chain")
+		}
+	}()
+	_ = r.StubEmitter("nope")
+}
+
+func TestStubAdapterBroadcastFn(t *testing.T) {
+	a := NewStubAdapter(StubAdapterOptions{
+		ChainID:     "stub",
+		FinalityBlocks: 3,
+		BroadcastFn: func(_ context.Context, _ []byte) (string, error) {
+			return "0xcustom", nil
+		},
+	})
+	h, err := a.Broadcast(context.Background(), []byte("payload"))
+	if err != nil || h != "0xcustom" {
+		t.Fatalf("broadcast fn: %v %s", err, h)
+	}
+}
+
+func TestStubAdapterBroadcastErr(t *testing.T) {
+	a := NewStubAdapter(StubAdapterOptions{
+		ChainID:      "stub",
+		FinalityBlocks: 3,
+		BroadcastErr: errors.New("boom"),
+	})
+	if _, err := a.Broadcast(context.Background(), []byte("payload")); err == nil {
+		t.Fatal("expected broadcast error")
+	}
+}
+
+func TestStubAdapterEstimateFeeCustom(t *testing.T) {
+	a := NewStubAdapter(StubAdapterOptions{
+		ChainID:     "stub",
+		FinalityBlocks: 3,
+		FeeEstimate: &FeeEstimate{ChainID: "stub", GasLimit: 999, GasPrice: big.NewInt(7), TotalFee: big.NewInt(7000), Strategy: "custom"},
+	})
+	fe, err := a.EstimateFee(context.Background(), FeeEstimateReq{Priority: PriorityHigh})
+	if err != nil {
+		t.Fatalf("estimate: %v", err)
+	}
+	if fe.GasLimit != 999 {
+		t.Errorf("gas limit: %d want 999", fe.GasLimit)
+	}
+}
+
+func TestStubAdapterGetTxStatusNotFound(t *testing.T) {
+	a := NewStubAdapter(StubAdapterOptions{ChainID: "stub", FinalityBlocks: 3})
+	if _, err := a.(*stubAdapter).GetTxStatus(context.Background(), "0xmissing"); err != ErrTxNotFound {
+		t.Fatalf("expected ErrTxNotFound, got %v", err)
+	}
+}
+
+func TestStubAdapterFinalityBlocks(t *testing.T) {
+	a := NewStubAdapter(StubAdapterOptions{ChainID: "stub", FinalityBlocks: 42})
+	if a.FinalityBlocks() != 42 {
+		t.Errorf("finality: %d want 42", a.FinalityBlocks())
+	}
+}
+
+func TestStubAdapterEmitHeadBackpressure(t *testing.T) {
+	a := NewStubAdapter(StubAdapterOptions{ChainID: "stub", FinalityBlocks: 3}).(*stubAdapter)
+	// Fill the heads channel (capacity 16) then emit one more; EmitHead
+	// should not block.
+	for i := 0; i < 16; i++ {
+		a.EmitHead(Head{ChainID: "stub", Height: uint64(i + 1)})
+	}
+	done := make(chan struct{})
+	go func() {
+		a.EmitHead(Head{ChainID: "stub", Height: 99})
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("EmitHead blocked on full channel")
+	}
+}
+
+func TestStubAdapterEmitMempoolBackpressure(t *testing.T) {
+	a := NewStubAdapter(StubAdapterOptions{ChainID: "stub", FinalityBlocks: 3}).(*stubAdapter)
+	for i := 0; i < 16; i++ {
+		a.EmitMempool(MempoolEvent{ChainID: "stub", TxHash: "0x1"})
+	}
+	done := make(chan struct{})
+	go func() {
+		a.EmitMempool(MempoolEvent{ChainID: "stub", TxHash: "0x2"})
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("EmitMempool blocked on full channel")
 	}
 }

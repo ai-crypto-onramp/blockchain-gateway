@@ -3,6 +3,7 @@ package mempool
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/ai-crypto-onramp/blockchain-gateway/internal/chain"
 )
@@ -55,5 +56,49 @@ func TestWatcherMarkReplaced(t *testing.T) {
 	}
 	if len(em.events) != 1 || em.events[0].Type != "tx.replaced" {
 		t.Errorf("events: %+v", em.events)
+	}
+}
+
+// TestWatcherRunConsumesAndExitsOnClose exercises Run with a channel that
+// emits one event then closes.
+func TestWatcherRunConsumesAndExitsOnClose(t *testing.T) {
+	em := &captureEmitter{}
+	w := NewWatcher(em, 0)
+	w.Track("ethereum", "0x1")
+	ch := make(chan chain.MempoolEvent, 1)
+	// An "exit" event emits a tx.dropped event for a tracked tx.
+	ch <- chain.MempoolEvent{ChainID: "ethereum", TxHash: "0x1", Kind: "exit"}
+	close(ch)
+	done := make(chan struct{})
+	go func() {
+		w.Run(context.Background(), ch)
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Run did not exit after channel close")
+	}
+	if len(em.events) != 1 {
+		t.Errorf("events: %d want 1", len(em.events))
+	}
+}
+
+// TestWatcherRunExitsOnContextCancel exercises the ctx.Done() branch.
+func TestWatcherRunExitsOnContextCancel(t *testing.T) {
+	em := &captureEmitter{}
+	w := NewWatcher(em, 0)
+	ch := make(chan chain.MempoolEvent)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		w.Run(ctx, ch)
+		close(done)
+	}()
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Run did not exit on context cancel")
 	}
 }

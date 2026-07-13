@@ -159,3 +159,87 @@ func TestAllComposite(t *testing.T) {
 		t.Fatal("missing store in composite")
 	}
 }
+
+// TestConfirmationStoreGet exercises the Get method (both hit and miss).
+func TestConfirmationStoreGet(t *testing.T) {
+	s := NewConfirmationStore()
+	ctx := context.Background()
+	_ = s.Upsert(ctx, &store.Confirmation{ChainID: "ethereum", TxHash: "0x1", Status: chain.StatusConfirmed})
+	got, err := s.Get(ctx, "ethereum", "0x1")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Status != chain.StatusConfirmed {
+		t.Errorf("status: %s", got.Status)
+	}
+	if _, err := s.Get(ctx, "ethereum", "0xmissing"); err == nil {
+		t.Fatal("expected not found error")
+	}
+}
+
+// TestConfirmationStoreGetClone verifies that Get returns a defensive
+// copy (mutations to the returned pointer do not affect the store).
+func TestConfirmationStoreGetClone(t *testing.T) {
+	s := NewConfirmationStore()
+	ctx := context.Background()
+	_ = s.Upsert(ctx, &store.Confirmation{ChainID: "ethereum", TxHash: "0x1", Status: chain.StatusConfirmed, Confirmations: 1})
+	got, _ := s.Get(ctx, "ethereum", "0x1")
+	got.Confirmations = 99
+	again, _ := s.Get(ctx, "ethereum", "0x1")
+	if again.Confirmations == 99 {
+		t.Error("Get did not return a defensive copy")
+	}
+}
+
+// TestOutboxStoreSnapshot exercises the Snapshot test helper.
+func TestOutboxStoreSnapshot(t *testing.T) {
+	s := NewOutboxStore()
+	ctx := context.Background()
+	_, _ = s.Append(ctx, &store.OutboxEntry{ChainID: "ethereum", TxHash: "0x1", Status: chain.StatusConfirmed, BlockHeight: 1})
+	_, _ = s.Append(ctx, &store.OutboxEntry{ChainID: "ethereum", TxHash: "0x2", Status: chain.StatusConfirmed, BlockHeight: 2})
+	snap := s.Snapshot()
+	if len(snap) != 2 {
+		t.Errorf("snapshot: %d want 2", len(snap))
+	}
+}
+
+// TestOutboxStoreMarkEmittedNotFound exercises the not-found branch of
+// MarkEmitted.
+func TestOutboxStoreMarkEmittedNotFound(t *testing.T) {
+	s := NewOutboxStore()
+	if err := s.MarkEmitted(context.Background(), 999); err == nil {
+		t.Fatal("expected not found error for unknown id")
+	}
+}
+
+// TestOutboxStoreListPendingLimit verifies the limit parameter is
+// respected.
+func TestOutboxStoreListPendingLimit(t *testing.T) {
+	s := NewOutboxStore()
+	ctx := context.Background()
+	for i := 0; i < 5; i++ {
+		_, _ = s.Append(ctx, &store.OutboxEntry{ChainID: "ethereum", TxHash: "0x" + string(rune('a'+i)), Status: chain.StatusConfirmed, BlockHeight: uint64(i)})
+	}
+	pending, _ := s.ListPending(ctx, 2)
+	if len(pending) != 2 {
+		t.Errorf("pending: %d want 2", len(pending))
+	}
+}
+
+// TestBigSafe exercises the bigSafe helper for both nil and non-nil
+// inputs.
+func TestBigSafe(t *testing.T) {
+	if bigSafe(nil) != nil {
+		t.Error("bigSafe(nil) should be nil")
+	}
+	n := big.NewInt(42)
+	safe := bigSafe(n)
+	if safe.Cmp(n) != 0 {
+		t.Errorf("bigSafe(42): %s want 42", safe)
+	}
+	// Mutating the original should not affect the safe copy.
+	n.Add(n, big.NewInt(100))
+	if safe.Cmp(big.NewInt(42)) != 0 {
+		t.Error("bigSafe did not return an independent copy")
+	}
+}

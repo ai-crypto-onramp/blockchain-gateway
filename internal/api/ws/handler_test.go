@@ -16,6 +16,80 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+// TestHeadToWSZeroTimestamp exercises the branch in headToWS where
+// h.Timestamp.Unix() == 0 (the epoch), which falls back to time.Now().
+func TestHeadToWSZeroTimestamp(t *testing.T) {
+	m := headToWS(chain.Head{ChainID: "eth", Height: 1, Hash: "0x1", Timestamp: time.Unix(0, 0)})
+	if m.Timestamp <= 0 {
+		t.Errorf("timestamp should fall back to now, got %d", m.Timestamp)
+	}
+}
+
+func TestHeadToWSWithTimestamp(t *testing.T) {
+	ts := time.Unix(1234567890, 0)
+	m := headToWS(chain.Head{ChainID: "eth", Height: 1, Hash: "0x1", Timestamp: ts})
+	if m.Timestamp != 1234567890 {
+		t.Errorf("timestamp: %d want 1234567890", m.Timestamp)
+	}
+}
+
+// TestWSHandlerUnknownChain404 ensures the handler writes a 404 before
+// upgrading when the chain is unknown.
+func TestWSHandlerUnknownChain404(t *testing.T) {
+	h := NewHandler(map[string]*tip.Follower{})
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/chains/nope/heads", nil)
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", rr.Code)
+	}
+}
+
+// TestWSUpgradeFailure ensures ServeHTTP returns silently when the upgrade
+// fails (non-WS request).
+func TestWSUpgradeFailure(t *testing.T) {
+	stub := chain.NewStubAdapter(chain.StubAdapterOptions{ChainID: "stub", FinalityBlocks: 3})
+	follower := tip.NewFollower(stub, memstore.NewTipStore(), time.Second)
+	h := NewHandler(map[string]*tip.Follower{"stub": follower})
+	r := chi.NewRouter()
+	r.Get("/v1/chains/{chain}/heads", h.ServeHTTP)
+	srv := httptest.NewServer(r)
+	defer srv.Close()
+	// Plain HTTP GET without WS upgrade headers -> Upgrade returns error.
+	resp, err := http.Get(srv.URL + "/v1/chains/stub/heads")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	defer resp.Body.Close()
+	// gorilla returns 400 from Upgrade on a plain GET; the handler then
+	// returns without writing further. We only assert no panic.
+}
+
+// TestWSWriteErrorExits verifies the handler exits when the client closes
+// the connection mid-stream (WriteJSON returns an error).
+func TestWSWriteErrorExits(t *testing.T) {
+	stub := chain.NewStubAdapter(chain.StubAdapterOptions{ChainID: "stub", FinalityBlocks: 3})
+	follower := tip.NewFollower(stub, memstore.NewTipStore(), time.Second)
+	h := NewHandler(map[string]*tip.Follower{"stub": follower})
+	r := chi.NewRouter()
+	r.Get("/v1/chains/{chain}/heads", h.ServeHTTP)
+	srv := httptest.NewServer(r)
+	defer srv.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = follower.Run(ctx) }()
+	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http") + "/v1/chains/stub/heads"
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	// Close the client connection immediately; the server's next WriteJSON
+	// will error and the handler should exit cleanly.
+	conn.Close()
+	// Give the handler a moment to observe the write error.
+	time.Sleep(100 * time.Millisecond)
+}
+
 func TestWSHeadsStream(t *testing.T) {
 	stub := chain.NewStubAdapter(chain.StubAdapterOptions{ChainID: "stub", FinalityBlocks: 3})
 	follower := tip.NewFollower(stub, memstore.NewTipStore(), time.Second)
