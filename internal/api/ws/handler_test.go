@@ -2,6 +2,7 @@ package ws
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -36,10 +37,23 @@ func TestWSHeadsStream(t *testing.T) {
 	defer conn.Close()
 	reg := chain.NewRegistry()
 	reg.Register(stub)
-	reg.StubEmitter("stub").EmitHead(chain.Head{ChainID: "stub", Height: 42, Hash: "0x42"})
-	_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+
+	// The WS handler subscribes asynchronously after the dial completes;
+	// under -race in CI the subscription may not be registered before we
+	// emit. Retry the emit + read until a head arrives or the deadline
+	// passes.
+	deadline := time.Now().Add(5 * time.Second)
+	_ = conn.SetReadDeadline(deadline)
 	var msg HeadMessage
-	if err := conn.ReadJSON(&msg); err != nil {
+	for time.Now().Before(deadline) {
+		reg.StubEmitter("stub").EmitHead(chain.Head{ChainID: "stub", Height: 42, Hash: "0x42"})
+		if err := conn.ReadJSON(&msg); err == nil {
+			break
+		} else if ne, ok := err.(net.Error); ok && ne.Timeout() {
+			// No head yet — subscription still racing. Extend and retry.
+			_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+			continue
+		}
 		t.Fatalf("read: %v", err)
 	}
 	if msg.Height != 42 {

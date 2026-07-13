@@ -111,7 +111,7 @@ func TestSmokeHealth(t *testing.T) {
 	}
 	ts := httptest.NewServer(srv.HTTPHandler())
 	defer ts.Close()
-	defer srv.Shutdown()
+	defer func() { _ = srv.Shutdown() }()
 	resp, err := http.Get(ts.URL + "/healthz")
 	if err != nil {
 		t.Fatalf("health: %v", err)
@@ -133,7 +133,7 @@ func TestSmokeHeight(t *testing.T) {
 	}
 	ts := httptest.NewServer(srv.HTTPHandler())
 	defer ts.Close()
-	defer srv.Shutdown()
+	defer func() { _ = srv.Shutdown() }()
 	resp, err := http.Get(ts.URL + "/v1/chains/stub/height")
 	if err != nil {
 		t.Fatalf("height: %v", err)
