@@ -195,7 +195,7 @@ func (s *ConfirmationStore) Transition(ctx context.Context, chainID, txHash stri
 	if err != nil {
 		return nil, false, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	var c store.Confirmation
 	var st string
 	row := tx.QueryRowContext(ctx,

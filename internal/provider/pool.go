@@ -89,7 +89,6 @@ func (b *breaker) State() string {
 
 // Pool is a per-chain provider pool. It is safe for concurrent use.
 type Pool struct {
-	mu          sync.Mutex
 	providers   []*entry
 	rr          uint64 // round-robin counter for reads
 	failover    bool

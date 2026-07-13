@@ -48,7 +48,7 @@ func TestFollowerUpdatesTip(t *testing.T) {
 	stores := memstore.NewAll()
 	f := NewFollower(stub, stores.Tip, 10*time.Millisecond)
 	ctx, cancel := context.WithCancel(context.Background())
-	go f.Run(ctx)
+	go func() { _ = f.Run(ctx) }()
 	time.Sleep(80 * time.Millisecond)
 	cancel()
 	got, err := stores.Tip.Get(context.Background(), "ethereum")

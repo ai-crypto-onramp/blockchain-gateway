@@ -15,7 +15,7 @@ func TestBuildDefault(t *testing.T) {
 	if err != nil {
 		t.Fatalf("build: %v", err)
 	}
-	defer srv.Shutdown()
+	defer func() { _ = srv.Shutdown() }()
 	if srv.HTTPHandler() == nil {
 		t.Fatal("nil handler")
 	}
@@ -37,7 +37,7 @@ func TestBuildWithChainsSupported(t *testing.T) {
 	if err != nil {
 		t.Fatalf("build: %v", err)
 	}
-	defer srv.Shutdown()
+	defer func() { _ = srv.Shutdown() }()
 	chains := srv.Registry().Chains()
 	if len(chains) != 2 {
 		t.Fatalf("chains: %v", chains)

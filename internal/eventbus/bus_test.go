@@ -64,9 +64,10 @@ func TestBusAuditFallbackRetries(t *testing.T) {
 	// Shrink retry backoff by overriding httpClient timeout to keep test
 	// fast enough.
 	bus.httpClient = &http.Client{Timeout: time.Second}
-	if err := bus.Emit(context.Background(), Event{Type: "tx.confirmed", ChainID: "ethereum", TxHash: "0x1", Status: chain.StatusConfirmed, BlockHeight: 100}); err == nil {
-		// Fallback exhaustion returns an error after 3 attempts.
-	}
+	// Fallback exhaustion returns an error after 3 attempts; the audit
+	// fallback retries internally, so we only assert that the upstream was
+	// hit at least once.
+	_ = bus.Emit(context.Background(), Event{Type: "tx.confirmed", ChainID: "ethereum", TxHash: "0x1", Status: chain.StatusConfirmed, BlockHeight: 100})
 	if attempts.Load() < 1 {
 		t.Errorf("expected attempts, got %d", attempts.Load())
 	}

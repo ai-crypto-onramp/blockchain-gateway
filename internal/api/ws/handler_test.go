@@ -26,7 +26,7 @@ func TestWSHeadsStream(t *testing.T) {
 	defer srv.Close()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	go follower.Run(ctx)
+	go func() { _ = follower.Run(ctx) }()
 
 	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http") + "/v1/chains/stub/heads"
 	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
@@ -37,7 +37,7 @@ func TestWSHeadsStream(t *testing.T) {
 	reg := chain.NewRegistry()
 	reg.Register(stub)
 	reg.StubEmitter("stub").EmitHead(chain.Head{ChainID: "stub", Height: 42, Hash: "0x42"})
-	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 	var msg HeadMessage
 	if err := conn.ReadJSON(&msg); err != nil {
 		t.Fatalf("read: %v", err)

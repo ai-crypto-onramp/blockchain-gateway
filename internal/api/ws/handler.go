@@ -7,7 +7,6 @@ package ws
 
 import (
 	"net/http"
-	"sync"
 	"time"
 
 	"github.com/ai-crypto-onramp/blockchain-gateway/internal/chain"
@@ -25,7 +24,6 @@ var upgrader = websocket.Upgrader{
 
 // Handler serves WS /v1/chains/{chain}/heads.
 type Handler struct {
-	mu        sync.Mutex
 	followers map[string]*tip.Follower
 }
 

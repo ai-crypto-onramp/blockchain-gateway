@@ -22,6 +22,9 @@ import (
 // broadcasts a signed tx, simulates the chain advancing past the finality
 // depth, and asserts the tx reaches `finalized`.
 func TestSmokeBroadcastConfirmFinalize(t *testing.T) {
+	// Force stub-only registry regardless of CI env (CHAINS_SUPPORTED may
+	// be set by `make test-integration`).
+	t.Setenv("CHAINS_SUPPORTED", "")
 	cfg := app.LoadConfig()
 	cfg.Port = "0"
 	cfg.BroadcastTimeout = 2 * time.Second
@@ -36,7 +39,7 @@ func TestSmokeBroadcastConfirmFinalize(t *testing.T) {
 	ts := httptest.NewServer(srv.HTTPHandler())
 	defer func() {
 		cancel()
-		srv.Shutdown()
+		_ = srv.Shutdown()
 		ts.Close()
 	}()
 
@@ -99,6 +102,7 @@ func TestSmokeBroadcastConfirmFinalize(t *testing.T) {
 
 // TestSmokeHealth verifies /healthz returns 200 on a booted app.
 func TestSmokeHealth(t *testing.T) {
+	t.Setenv("CHAINS_SUPPORTED", "")
 	cfg := app.LoadConfig()
 	cfg.Port = "0"
 	srv, err := app.Build(cfg)
@@ -120,6 +124,7 @@ func TestSmokeHealth(t *testing.T) {
 
 // TestSmokeHeight verifies /v1/chains/stub/height returns 200.
 func TestSmokeHeight(t *testing.T) {
+	t.Setenv("CHAINS_SUPPORTED", "")
 	cfg := app.LoadConfig()
 	cfg.Port = "0"
 	srv, err := app.Build(cfg)

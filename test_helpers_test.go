@@ -24,12 +24,6 @@ func buildTestServer() (*httptest.Server, error) {
 	return ts, nil
 }
 
-func buildTestServerOnPort(port string) (*app.Server, error) {
-	cfg := app.LoadConfig()
-	cfg.Port = port
-	return app.Build(cfg)
-}
-
 func newHTTPServerOnPort(port string) *http.Server {
 	return &http.Server{Addr: ":" + port, Handler: http.NewServeMux()}
 }

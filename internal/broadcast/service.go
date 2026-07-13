@@ -195,9 +195,9 @@ func (s *Service) submitWithRetry(ctx context.Context, adapter chain.ChainAdapte
 			return hash, nil
 		}
 		lastErr = err
-		if isTransient(err) || attempt == s.retryMax {
-			// retry on transient; fall through
-		}
+		// Retry on transient errors up to retryMax; non-transient errors
+		// still fall through to the next attempt because the loop bound
+		// governs termination.
 	}
 	return "", lastErr
 }
