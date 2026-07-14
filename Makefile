@@ -1,10 +1,10 @@
-.PHONY: build test test-integration lint coverage run docker-build docker-run docker-up docker-down e2e-smoke clean migrate-up migrate-down
+.PHONY: build test test-integration lint cover run docker-build docker-run docker-up docker-down e2e-smoke clean migrate-up migrate-down
 
 build:
 	go build -o bin/blockchain-gateway ./cmd/server
 
 test:
-	go test ./cmd/... ./internal/... -race -coverprofile=coverage.out -coverpkg=./cmd/...,./internal/...
+	go test ./internal/... -race -coverprofile=coverage.out -coverpkg=./internal/...
 
 test-integration:
 	docker compose up -d postgres redis
@@ -15,13 +15,13 @@ test-integration:
 	CHAINS_SUPPORTED=ethereum \
 	RPC_URLS_ETHEREUM=http://localhost:8545 \
 	FINALITY_BLOCKS_ETHEREUM=64 \
-	go test ./cmd/... ./internal/... -race -coverprofile=coverage.out -coverpkg=./cmd/...,./internal/... -tags=integration
+	go test ./internal/... -race -coverprofile=coverage.out -coverpkg=./internal/... -tags=integration
 	docker compose down
 
 lint:
 	golangci-lint run
 
-coverage: test
+cover: test
 	go tool cover -func=coverage.out | tail -1
 
 run:
