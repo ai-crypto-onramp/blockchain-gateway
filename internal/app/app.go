@@ -30,7 +30,9 @@ import (
 	"github.com/ai-crypto-onramp/blockchain-gateway/internal/mempool"
 	"github.com/ai-crypto-onramp/blockchain-gateway/internal/prepayment"
 	"github.com/ai-crypto-onramp/blockchain-gateway/internal/reorg"
+	"github.com/ai-crypto-onramp/blockchain-gateway/internal/store"
 	"github.com/ai-crypto-onramp/blockchain-gateway/internal/store/memstore"
+	"github.com/ai-crypto-onramp/blockchain-gateway/internal/store/postgres"
 	"github.com/ai-crypto-onramp/blockchain-gateway/internal/tip"
 	"github.com/ai-crypto-onramp/blockchain-gateway/internal/walletclient"
 
@@ -95,8 +97,35 @@ func Build(cfg Config) (*Server, error) {
 		registry.Register(chain.NewStubAdapter(chain.StubAdapterOptions{ChainID: "stub", FinalityBlocks: 3}))
 	}
 
-	stores := memstore.NewAll()
-	bus := eventbus.NewBus(stores.Outbox, eventbus.NopPublisher{}, cfg.AuditEventLogURL)
+	var (
+		broadcastStore    store.BroadcastStore
+		confirmationStore store.ConfirmationStore
+		tipStore          store.TipStore
+		_                 store.FeeStore
+		reorgStore        store.ReorgStore
+		outboxStore       store.OutboxStore
+	)
+	if dsn := os.Getenv("DB_URL"); dsn != "" {
+		pg, err := postgres.Open(dsn)
+		if err != nil {
+			return nil, fmt.Errorf("open postgres: %w", err)
+		}
+		broadcastStore = pg.Broadcast()
+		confirmationStore = pg.Confirmation()
+		tipStore = pg.Tip()
+		_ = pg.Fee()
+		reorgStore = pg.Reorg()
+		outboxStore = pg.Outbox()
+	} else {
+		mem := memstore.NewAll()
+		broadcastStore = mem.Broadcast
+		confirmationStore = mem.Confirmation
+		tipStore = mem.Tip
+		_ = mem.Fee
+		reorgStore = mem.Reorg
+		outboxStore = mem.Outbox
+	}
+	bus := eventbus.NewBus(outboxStore, eventbus.NopPublisher{}, cfg.AuditEventLogURL)
 	auditLog := audit.New(bus, 1024)
 
 	// Wire emitters: confirmation -> bus, reorg -> bus, mempool -> bus.
@@ -113,13 +142,13 @@ func Build(cfg Config) (*Server, error) {
 	prepay := prepayment.NewManager(wallet, locks, 30*time.Second)
 
 	// Confirmation tracker.
-	confirmer := confirmation.NewWorkerPool(4, stores.Confirmation, lookupAdapter(registry), emitter)
+	confirmer := confirmation.NewWorkerPool(4, confirmationStore, lookupAdapter(registry), emitter)
 
 	// Mempool watcher.
 	watcher := mempool.NewWatcher(emitter, 5*time.Minute)
 
 	// Broadcast service.
-	svc := broadcast.NewService(registry, stores.Broadcast, stores.Confirmation, prepay, watcher, bus, confirmer, broadcast.Options{
+	svc := broadcast.NewService(registry, broadcastStore, confirmationStore, prepay, watcher, bus, confirmer, broadcast.Options{
 		Timeout:  cfg.BroadcastTimeout,
 		RetryMax: cfg.BroadcastRetryMax,
 	})
@@ -137,16 +166,16 @@ func Build(cfg Config) (*Server, error) {
 		if err != nil {
 			continue
 		}
-		f := tip.NewFollower(adapter, stores.Tip, cfg.ConfirmationPoll)
+		f := tip.NewFollower(adapter, tipStore, cfg.ConfirmationPoll)
 		f.SetConfirmer(confirmer)
-		f.SetDetector(&detectorAdapter{det: reorg.NewDetector(stores.Tip, stores.Reorg, stores.Confirmation, emitter)})
+		f.SetDetector(&detectorAdapter{det: reorg.NewDetector(tipStore, reorgStore, confirmationStore, emitter)})
 		followers[c.ChainID] = f
 	}
 	// Stub follower so WS /v1/chains/stub/heads works in tests.
 	if _, ok := followers["stub"]; !ok {
 		adapter, _ := registry.Get("stub")
 		if adapter != nil {
-			f := tip.NewFollower(adapter, stores.Tip, cfg.ConfirmationPoll)
+			f := tip.NewFollower(adapter, tipStore, cfg.ConfirmationPoll)
 			f.SetConfirmer(confirmer)
 			followers["stub"] = f
 		}
@@ -156,9 +185,9 @@ func Build(cfg Config) (*Server, error) {
 		Registry:   registry,
 		Broadcast:  svc,
 		Estimators: estimators,
-		Broadcasts: stores.Broadcast,
-		Confirms:   stores.Confirmation,
-		Tips:       stores.Tip,
+		Broadcasts: broadcastStore,
+		Confirms:   confirmationStore,
+		Tips:       tipStore,
 		Followers:  followers,
 		Bus:        bus,
 		WSHandler:  ws.NewHandler(followers),
