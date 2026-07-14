@@ -1,4 +1,4 @@
-.PHONY: build test test-race test-integration lint vet coverage run docker-up docker-down e2e-smoke clean
+.PHONY: build test test-race test-integration lint coverage run docker-up docker-down e2e-smoke clean
 
 build:
 	go build -o bin/server ./cmd/server
@@ -22,10 +22,7 @@ test-integration:
 	docker compose down
 
 lint:
-	@which golangci-lint > /dev/null 2>&1 && golangci-lint run ./... || go vet ./...
-
-vet:
-	go vet ./...
+	golangci-lint run
 
 coverage: test
 	go tool cover -func=coverage.out | tail -1
