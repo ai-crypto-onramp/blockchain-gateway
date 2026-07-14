@@ -23,6 +23,11 @@ import (
 //go:embed migrations/001_init.sql
 var initSQL string
 
+// InitSQL returns the embedded init schema SQL applied by Open. It is
+// exposed so external commands (e.g. cmd/migrate) can reuse the same
+// migration without duplicating the file.
+func InitSQL() string { return initSQL }
+
 // DB wraps a *sql.DB and exposes the store implementations.
 type DB struct {
 	sql           *sql.DB

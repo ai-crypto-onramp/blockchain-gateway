@@ -7,3 +7,4 @@ vendor/
 /blockchain-gateway
 coverage.out
 *.testcoverage.out
+/migrate
