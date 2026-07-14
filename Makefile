@@ -1,7 +1,7 @@
-.PHONY: build test test-integration lint cover run docker-build docker-run docker-up docker-down e2e-smoke clean migrate-up migrate-down
+.PHONY: build test test-integration lint coverage run docker-build docker-run docker-up docker-down e2e-smoke clean migrate-up migrate-down
 
 build:
-	go build -o bin/server ./cmd/server
+	go build -o bin/blockchain-gateway ./cmd/server
 
 test:
 	go test ./cmd/... ./internal/... -race -coverprofile=coverage.out -coverpkg=./cmd/...,./internal/...
@@ -21,7 +21,7 @@ test-integration:
 lint:
 	golangci-lint run
 
-cover: test
+coverage: test
 	go tool cover -func=coverage.out | tail -1
 
 run:
@@ -46,7 +46,7 @@ clean:
 	rm -rf bin/ coverage.out
 
 migrate-up:
-	DB_URL="$(DB_URL)" go run ./cmd/migrate --up
+	go run ./cmd/migrate --up
 
 migrate-down:
-	DB_URL="$(DB_URL)" go run ./cmd/migrate --down
+	go run ./cmd/migrate --down
