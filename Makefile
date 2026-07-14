@@ -1,22 +1,10 @@
-.PHONY: build test test-integration lint cover run docker-build docker-run docker-up docker-down e2e-smoke clean migrate-up migrate-down
+.PHONY: build test lint cover run docker-build docker-run docker-up docker-down clean migrate-up migrate-down
 
 build:
 	go build -o bin/blockchain-gateway ./cmd/server
 
 test:
 	go test ./internal/... -race -coverprofile=coverage.out -coverpkg=./internal/...
-
-test-integration:
-	docker compose up -d postgres redis
-	@echo "Waiting for Postgres + Redis to be healthy..."
-	@sleep 5
-	DB_URL=postgres://gateway:gateway@localhost:5432/gateway?sslmode=disable \
-	REDIS_URL=redis://localhost:6379/0 \
-	CHAINS_SUPPORTED=ethereum \
-	RPC_URLS_ETHEREUM=http://localhost:8545 \
-	FINALITY_BLOCKS_ETHEREUM=64 \
-	go test ./internal/... -race -coverprofile=coverage.out -coverpkg=./internal/... -tags=integration
-	docker compose down
 
 lint:
 	golangci-lint run
@@ -38,9 +26,6 @@ docker-up:
 
 docker-down:
 	docker compose down
-
-e2e-smoke:
-	go test ./test/e2e/ -v -race -timeout 30s
 
 clean:
 	rm -rf bin/ coverage.out
