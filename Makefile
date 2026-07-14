@@ -1,13 +1,13 @@
 .PHONY: build test test-race test-integration lint vet coverage run docker-up docker-down e2e-smoke clean
 
 build:
-	go build -o bin/server .
+	go build -o bin/server ./cmd/server
 
 test:
-	go test ./... -coverprofile=coverage.out -coverpkg=./...
+	go test ./cmd/... ./internal/... -coverprofile=coverage.out -coverpkg=./cmd/...,./internal/...
 
 test-race:
-	go test ./... -race -coverprofile=coverage.out -coverpkg=./...
+	go test ./cmd/... ./internal/... -race -coverprofile=coverage.out -coverpkg=./cmd/...,./internal/...
 
 test-integration:
 	docker compose up -d postgres redis
@@ -18,7 +18,7 @@ test-integration:
 	CHAINS_SUPPORTED=ethereum \
 	RPC_URLS_ETHEREUM=http://localhost:8545 \
 	FINALITY_BLOCKS_ETHEREUM=64 \
-	go test ./... -race -coverprofile=coverage.out -coverpkg=./... -tags=integration
+	go test ./cmd/... ./internal/... -race -coverprofile=coverage.out -coverpkg=./cmd/...,./internal/... -tags=integration
 	docker compose down
 
 lint:
@@ -31,7 +31,7 @@ coverage: test
 	go tool cover -func=coverage.out | tail -1
 
 run:
-	go run .
+	go run ./cmd/server
 
 docker-up:
 	docker compose up -d --build
