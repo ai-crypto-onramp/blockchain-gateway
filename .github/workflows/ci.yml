@@ -30,7 +30,8 @@ jobs:
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v6
         with:
-          version: latest
+          version: v1.65.0
+          install-mode: goinstall
           args: --timeout 5m
 
   test:
@@ -47,6 +48,15 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: coverage.out
           fail_ci_if_error: false
+
+  test-integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+      - run: make test-integration
 
   e2e-smoke:
     runs-on: ubuntu-latest
