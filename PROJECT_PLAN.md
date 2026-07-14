@@ -332,7 +332,7 @@ status, block_height)`.
       `tx.reorged`, `tx.failed`; each with `chain`, `tx_hash`, `from`, `to`,
       `value`, `fee`, `block_height`, `block_hash`, `confirmations`,
       `finalized_at`, `emitted_at`.
-- [x] Implement an `EventBus` publisher (Kafka / NATS JetStream) with
+- [x] Implement an `EventBus` publisher (Kafka) with
       at-least-once delivery and an outbox in PostgreSQL keyed by
       `(chain, tx_hash, status, block_height)` for dedup.
 - [x] Wire the confirmation worker, reorg handler, and mempool watcher to emit

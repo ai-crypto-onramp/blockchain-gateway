@@ -224,7 +224,7 @@ chains:
   failover); optional self-hosted nodes.
 - **wallet-management** — nonce allocation and gas prepayment.
 - **audit-event-log** — append-only audit trail consumer.
-- **Event bus** (e.g. Kafka / NATS JetStream) — async emission to
+- **Event bus** (Kafka) — async emission to
   Notification, Reconciliation, Audit.
 
 ## Configuration
