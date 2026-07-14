@@ -118,7 +118,7 @@ func (s *Service) Broadcast(ctx context.Context, req *Request) (*Response, error
 	}
 	// Prepayment + nonce (only if a prepay manager + From address are
 	// supplied). In the minimal test path both are zero-value.
-	var nonce uint64 = req.Nonce
+	var nonce = req.Nonce
 	if s.prepay != nil && req.From != "" {
 		fee, _ := adapter.EstimateFee(ctx, chain.FeeEstimateReq{Priority: chain.PriorityStandard})
 		feeAmt := big.NewInt(0)

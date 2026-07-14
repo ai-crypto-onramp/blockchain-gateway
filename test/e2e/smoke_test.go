@@ -53,7 +53,7 @@ func TestSmokeBroadcastConfirmFinalize(t *testing.T) {
 	if err != nil {
 		t.Fatalf("broadcast: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("broadcast status: %d", resp.StatusCode)
 	}
@@ -116,7 +116,7 @@ func TestSmokeHealth(t *testing.T) {
 	if err != nil {
 		t.Fatalf("health: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("health status: %d", resp.StatusCode)
 	}
