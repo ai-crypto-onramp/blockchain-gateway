@@ -363,7 +363,7 @@ lint clean, CI green with Codecov upload, and a reproducible Docker image plus
 
 ### Tasks
 
-- [x] Reach >=80% unit test coverage across `internal/...`; add targeted tests
+- [x] Raise unit test coverage across `internal/...`; add targeted tests
       for the broadcast, fee, confirmation, reorg, mempool, and failover paths.
 - [x] Add `make test-integration` that spins up Postgres + Redis via
       `docker-compose` and runs the integration suite (broadcast, confirmation,
@@ -379,7 +379,7 @@ lint clean, CI green with Codecov upload, and a reproducible Docker image plus
 
 ### Acceptance criteria
 
-- `make lint && make vet && make test` all pass; Codecov reports >=80%.
+- `make lint && make vet && make test` all pass; coverage reported to Codecov.
 - `docker compose up` brings the gateway up connected to Postgres + Redis and
   `GET /v1/chains/:chain/height` returns 200.
 - CI pipeline is green on `main` and uploads coverage.
