@@ -1,12 +1,9 @@
-.PHONY: build test test-race test-integration lint coverage run docker-up docker-down e2e-smoke clean
+.PHONY: build test test-integration lint cover run docker-build docker-run docker-up docker-down e2e-smoke clean
 
 build:
 	go build -o bin/server ./cmd/server
 
 test:
-	go test ./cmd/... ./internal/... -coverprofile=coverage.out -coverpkg=./cmd/...,./internal/...
-
-test-race:
 	go test ./cmd/... ./internal/... -race -coverprofile=coverage.out -coverpkg=./cmd/...,./internal/...
 
 test-integration:
@@ -24,11 +21,17 @@ test-integration:
 lint:
 	golangci-lint run
 
-coverage: test
+cover: test
 	go tool cover -func=coverage.out | tail -1
 
 run:
 	go run ./cmd/server
+
+docker-build:
+	docker build -t ai-crypto-onramp/blockchain-gateway .
+
+docker-run:
+	docker run --rm -p 8080:8080 ai-crypto-onramp/blockchain-gateway
 
 docker-up:
 	docker compose up -d --build
