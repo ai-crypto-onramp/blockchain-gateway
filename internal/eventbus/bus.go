@@ -13,11 +13,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/ai-crypto-onramp/blockchain-gateway/internal/chain"
 	"github.com/ai-crypto-onramp/blockchain-gateway/internal/store"
+	"github.com/segmentio/kafka-go"
 )
 
 // Event is the canonical event schema emitted by the gateway.
@@ -155,7 +157,7 @@ type NopPublisher struct{}
 // Publish returns nil.
 func (NopPublisher) Publish(_ context.Context, _ Event) error { return nil }
 
-// HTTPPublisher POSTs events to a broker URL (e.g. NATS REST proxy).
+// HTTPPublisher POSTs events to a broker URL (e.g. REST proxy).
 type HTTPPublisher struct {
 	URL    string
 	Client *http.Client
@@ -186,4 +188,96 @@ func (p *HTTPPublisher) Publish(ctx context.Context, e Event) error {
 		return fmt.Errorf("event bus http %d", resp.StatusCode)
 	}
 	return nil
+}
+
+// NewPublisherFromURL selects a Publisher based on the URL scheme:
+//   - ""                       -> NopPublisher
+//   - "kafka://host:9092[?topic=t]" -> KafkaPublisher
+//   - "http://" or "https://"  -> HTTPPublisher
+//
+// Any other scheme returns an error.
+func NewPublisherFromURL(url string) (Publisher, error) {
+	switch {
+	case url == "":
+		return NopPublisher{}, nil
+	case strings.HasPrefix(url, "kafka://"):
+		return NewKafkaPublisherFromURL(url)
+	case strings.HasPrefix(url, "http://") || strings.HasPrefix(url, "https://"):
+		return NewHTTPPublisher(url), nil
+	default:
+		return nil, fmt.Errorf("eventbus: unknown scheme in %q (use kafka:// or http://)", url)
+	}
+}
+
+// KafkaPublisher publishes blockchain lifecycle events to a Kafka topic.
+// It implements Publisher.
+type KafkaPublisher struct {
+	writer *kafka.Writer
+}
+
+// NewKafkaPublisher returns a KafkaPublisher targeting the given brokers and
+// topic. Events are keyed by tx_hash so consumers receive per-tx ordering.
+func NewKafkaPublisher(brokers []string, topic string) (*KafkaPublisher, error) {
+	if len(brokers) == 0 {
+		return nil, fmt.Errorf("eventbus kafka: no brokers provided")
+	}
+	if topic == "" {
+		topic = "blockchain.events.v1"
+	}
+	w := &kafka.Writer{
+		Addr:         kafka.TCP(brokers...),
+		Topic:        topic,
+		Balancer:     &kafka.LeastBytes{},
+		BatchTimeout: 10 * time.Millisecond,
+		RequiredAcks: kafka.RequireAll,
+	}
+	return &KafkaPublisher{writer: w}, nil
+}
+
+// NewKafkaPublisherFromURL parses a "kafka://host:9092[,host2][?topic=t]" URL
+// and returns a KafkaPublisher.
+func NewKafkaPublisherFromURL(url string) (*KafkaPublisher, error) {
+	rest := strings.TrimPrefix(url, "kafka://")
+	topic := ""
+	if i := strings.Index(rest, "?"); i >= 0 {
+		q := rest[i+1:]
+		rest = rest[:i]
+		for _, kv := range strings.Split(q, "&") {
+			if strings.HasPrefix(kv, "topic=") {
+				topic = strings.TrimPrefix(kv, "topic=")
+			}
+		}
+	}
+	brokers := strings.Split(rest, ",")
+	clean := brokers[:0]
+	for _, b := range brokers {
+		b = strings.TrimSpace(b)
+		if b != "" {
+			clean = append(clean, b)
+		}
+	}
+	return NewKafkaPublisher(clean, topic)
+}
+
+// Publish writes the encoded event to Kafka, keyed by tx_hash.
+func (p *KafkaPublisher) Publish(ctx context.Context, e Event) error {
+	if p == nil || p.writer == nil {
+		return errors.New("eventbus kafka: not connected")
+	}
+	body, err := json.Marshal(e)
+	if err != nil {
+		return err
+	}
+	return p.writer.WriteMessages(ctx, kafka.Message{
+		Key:   []byte(e.TxHash),
+		Value: body,
+	})
+}
+
+// Close flushes and closes the underlying writer.
+func (p *KafkaPublisher) Close() error {
+	if p == nil || p.writer == nil {
+		return nil
+	}
+	return p.writer.Close()
 }

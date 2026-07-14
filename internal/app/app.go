@@ -126,6 +126,16 @@ func Build(cfg Config) (*Server, error) {
 		outboxStore = mem.Outbox
 	}
 	bus := eventbus.NewBus(outboxStore, eventbus.NopPublisher{}, cfg.AuditEventLogURL)
+	// When EVENT_BUS_URL is set (kafka://...), wire a real Kafka publisher
+	// instead of the Nop default. Failure to construct is non-fatal: the
+	// bus falls back to the synchronous audit HTTP endpoint.
+	if cfg.EventBusURL != "" {
+		if pub, err := eventbus.NewPublisherFromURL(cfg.EventBusURL); err == nil {
+			bus = eventbus.NewBus(outboxStore, pub, cfg.AuditEventLogURL)
+		} else {
+			log.Printf("app: event bus init failed, using nop publisher: %v", err)
+		}
+	}
 	auditLog := audit.New(bus, 1024)
 
 	// Wire emitters: confirmation -> bus, reorg -> bus, mempool -> bus.

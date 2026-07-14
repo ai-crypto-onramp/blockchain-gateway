@@ -141,4 +141,65 @@ func TestOutboxEntryDedupKey(t *testing.T) {
 	}
 }
 
+func TestNewPublisherFromURLSelectsByScheme(t *testing.T) {
+	p, err := NewPublisherFromURL("")
+	if err != nil {
+		t.Fatalf("empty: %v", err)
+	}
+	if _, ok := p.(NopPublisher); !ok {
+		t.Fatalf("expected NopPublisher, got %T", p)
+	}
+
+	p, err = NewPublisherFromURL("kafka://broker:9092,broker2:9092?topic=blockchain.events.v1")
+	if err != nil {
+		t.Fatalf("kafka: %v", err)
+	}
+	kp, ok := p.(*KafkaPublisher)
+	if !ok {
+		t.Fatalf("expected *KafkaPublisher, got %T", p)
+	}
+	if kp.writer == nil {
+		t.Fatal("expected non-nil writer")
+	}
+	if kp.writer.Topic != "blockchain.events.v1" {
+		t.Fatalf("expected topic blockchain.events.v1, got %q", kp.writer.Topic)
+	}
+	_ = kp.Close()
+
+	p, err = NewPublisherFromURL("http://example.com/events")
+	if err != nil {
+		t.Fatalf("http: %v", err)
+	}
+	if _, ok := p.(*HTTPPublisher); !ok {
+		t.Fatalf("expected *HTTPPublisher, got %T", p)
+	}
+
+	if _, err := NewPublisherFromURL("foobar://x"); err == nil {
+		t.Fatal("expected error for unknown scheme")
+	}
+}
+
+func TestKafkaPublisherNoBrokers(t *testing.T) {
+	if _, err := NewKafkaPublisher(nil, ""); err == nil {
+		t.Fatal("expected error for empty brokers")
+	}
+	if _, err := NewKafkaPublisherFromURL("kafka://"); err == nil {
+		t.Fatal("expected error for empty brokers")
+	}
+}
+
+func TestKafkaPublisherNilWriterPublish(t *testing.T) {
+	var p *KafkaPublisher
+	if err := p.Publish(context.Background(), Event{TxHash: "0x1"}); err == nil {
+		t.Fatal("expected error on nil publisher")
+	}
+	p = &KafkaPublisher{}
+	if err := p.Publish(context.Background(), Event{TxHash: "0x1"}); err == nil {
+		t.Fatal("expected error on nil writer")
+	}
+	if err := p.Close(); err != nil {
+		t.Fatalf("close should be no-op on nil writer: %v", err)
+	}
+}
+
 var _ = fmt.Sprintf
