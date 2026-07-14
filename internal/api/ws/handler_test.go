@@ -60,7 +60,7 @@ func TestWSUpgradeFailure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	// gorilla returns 400 from Upgrade on a plain GET; the handler then
 	// returns without writing further. We only assert no panic.
 }

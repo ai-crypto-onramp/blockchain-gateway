@@ -90,7 +90,7 @@ func TestSmokeBroadcastConfirmFinalize(t *testing.T) {
 			Confirmations int    `json:"confirmations"`
 		}
 		_ = json.NewDecoder(r.Body).Decode(&sr)
-		r.Body.Close()
+		_ = r.Body.Close()
 		status = sr.Status
 		if status == "finalized" {
 			return

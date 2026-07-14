@@ -344,7 +344,7 @@ func (s *OutboxStore) ListPending(ctx context.Context, limit int) ([]*store.Outb
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []*store.OutboxEntry
 	for rows.Next() {
 		var e store.OutboxEntry
