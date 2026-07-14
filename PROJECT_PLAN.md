@@ -357,7 +357,7 @@ status, block_height)`.
 
 ### Goal
 
-Reach production readiness: comprehensive unit + integration test coverage,
+Reach production readiness: comprehensive unit + integration tests,
 lint clean, CI green with Codecov upload, and a reproducible Docker image plus
 `docker-compose` for local Postgres + Redis + the gateway.
 
