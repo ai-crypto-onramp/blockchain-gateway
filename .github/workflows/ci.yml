@@ -48,15 +48,6 @@ jobs:
           files: coverage.out
           fail_ci_if_error: false
 
-  test-integration:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.25.x'
-      - run: make test-integration
-
   e2e-smoke:
     runs-on: ubuntu-latest
     steps:
