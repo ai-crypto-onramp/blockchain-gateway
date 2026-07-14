@@ -45,7 +45,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	sub, cancel := f.Subscriber().Subscribe(32)
 	defer cancel()
 	ticker := time.NewTicker(30 * time.Second)

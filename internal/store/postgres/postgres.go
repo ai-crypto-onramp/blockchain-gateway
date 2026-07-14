@@ -155,7 +155,7 @@ func (s *ConfirmationStore) ListByStatus(ctx context.Context, chainID string, st
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []*store.Confirmation
 	for rows.Next() {
 		var c store.Confirmation
@@ -176,7 +176,7 @@ func (s *ConfirmationStore) ListAboveHeight(ctx context.Context, chainID string,
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []*store.Confirmation
 	for rows.Next() {
 		var c store.Confirmation
@@ -307,7 +307,7 @@ func (s *ReorgStore) List(ctx context.Context, chainID string) ([]*store.ReorgEv
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []*store.ReorgEvent
 	for rows.Next() {
 		var e store.ReorgEvent

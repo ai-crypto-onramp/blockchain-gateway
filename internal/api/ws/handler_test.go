@@ -85,7 +85,7 @@ func TestWSWriteErrorExits(t *testing.T) {
 	}
 	// Close the client connection immediately; the server's next WriteJSON
 	// will error and the handler should exit cleanly.
-	conn.Close()
+	_ = conn.Close()
 	// Give the handler a moment to observe the write error.
 	time.Sleep(100 * time.Millisecond)
 }
@@ -108,7 +108,7 @@ func TestWSHeadsStream(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dial: %v", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	reg := chain.NewRegistry()
 	reg.Register(stub)
 

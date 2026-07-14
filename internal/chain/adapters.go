@@ -79,7 +79,7 @@ func (c *rpcClient) call(ctx context.Context, method string, params []any) (json
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		raw, _ := io.ReadAll(resp.Body)
 		return nil, fmt.Errorf("rpc http %d: %s", resp.StatusCode, string(raw))

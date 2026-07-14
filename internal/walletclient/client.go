@@ -86,7 +86,7 @@ func doJSON[T any](ctx context.Context, c *http.Client, url string, body any) (*
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 400 {
 		txt, _ := io.ReadAll(resp.Body)
 		return nil, fmt.Errorf("wallet-mgmt http %d: %s", resp.StatusCode, string(txt))

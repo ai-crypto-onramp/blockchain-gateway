@@ -181,7 +181,7 @@ func (p *HTTPPublisher) Publish(ctx context.Context, e Event) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("event bus http %d", resp.StatusCode)
 	}

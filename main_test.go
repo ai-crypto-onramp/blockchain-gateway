@@ -60,7 +60,7 @@ func TestRunReturnsErrorOnBusyAddress(t *testing.T) {
 	if err != nil {
 		t.Fatalf("listen: %v", err)
 	}
-	defer ln.Close()
+	defer func() { _ = ln.Close() }()
 	port := portFromAddr(ln.Addr().String())
 	// Build a second http.Server on the same port; ListenAndServe must fail.
 	srv2 := newHTTPServerOnPort(port)
