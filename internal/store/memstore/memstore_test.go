@@ -8,6 +8,7 @@ import (
 
 	"github.com/ai-crypto-onramp/blockchain-gateway/internal/chain"
 	"github.com/ai-crypto-onramp/blockchain-gateway/internal/store"
+	"github.com/google/uuid"
 )
 
 func TestBroadcastStore(t *testing.T) {
@@ -207,7 +208,7 @@ func TestOutboxStoreSnapshot(t *testing.T) {
 // MarkEmitted.
 func TestOutboxStoreMarkEmittedNotFound(t *testing.T) {
 	s := NewOutboxStore()
-	if err := s.MarkEmitted(context.Background(), 999); err == nil {
+	if err := s.MarkEmitted(context.Background(), uuid.New()); err == nil {
 		t.Fatal("expected not found error for unknown id")
 	}
 }

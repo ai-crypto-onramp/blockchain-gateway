@@ -18,6 +18,7 @@ import (
 
 	"github.com/ai-crypto-onramp/blockchain-gateway/internal/chain"
 	"github.com/ai-crypto-onramp/blockchain-gateway/internal/store"
+	"github.com/google/uuid"
 )
 
 //go:embed migrations/001_init.sql
@@ -89,21 +90,25 @@ func (d *DB) Outbox() store.OutboxStore { return d.outbox }
 type BroadcastStore struct{ db *sql.DB }
 
 func (s *BroadcastStore) Insert(ctx context.Context, b *store.Broadcast) error {
+	id := b.ID
+	if id == (uuid.UUID{}) {
+		id, _ = uuid.NewV7()
+	}
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO broadcasts (chain_id, tx_hash, signed_tx, from_addr, to_addr, value, nonce, submitted_at, submitted_by)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (chain_id, tx_hash) DO NOTHING`,
-		b.ChainID, b.TxHash, b.SignedTx, b.FromAddr, b.ToAddr, b.Value.String(), b.Nonce, b.SubmittedAt, b.SubmittedBy)
+		`INSERT INTO broadcasts (id, chain_id, tx_hash, signed_tx, from_addr, to_addr, value, nonce, submitted_at, submitted_by)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT (chain_id, tx_hash) DO NOTHING`,
+		id, b.ChainID, b.TxHash, b.SignedTx, b.FromAddr, b.ToAddr, b.Value.String(), b.Nonce, b.SubmittedAt, b.SubmittedBy)
 	return err
 }
 
 func (s *BroadcastStore) GetByTxHash(ctx context.Context, chainID, txHash string) (*store.Broadcast, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT chain_id, tx_hash, signed_tx, from_addr, to_addr, value, nonce, submitted_at, submitted_by
+		`SELECT id, chain_id, tx_hash, signed_tx, from_addr, to_addr, value, nonce, submitted_at, submitted_by
 		 FROM broadcasts WHERE chain_id=$1 AND tx_hash=$2`, chainID, txHash)
 	var b store.Broadcast
 	var valStr, submittedBy string
 	var submittedAt time.Time
-	if err := row.Scan(&b.ChainID, &b.TxHash, &b.SignedTx, &b.FromAddr, &b.ToAddr, &valStr, &b.Nonce, &submittedAt, &submittedBy); err != nil {
+	if err := row.Scan(&b.ID, &b.ChainID, &b.TxHash, &b.SignedTx, &b.FromAddr, &b.ToAddr, &valStr, &b.Nonce, &submittedAt, &submittedBy); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, &store.ErrNotFound{Chain: chainID, Key: txHash}
 		}
@@ -127,23 +132,28 @@ func (s *BroadcastStore) Exists(ctx context.Context, chainID, txHash string) (bo
 type ConfirmationStore struct{ db *sql.DB }
 
 func (s *ConfirmationStore) Upsert(ctx context.Context, c *store.Confirmation) error {
+	id := c.ID
+	if id == (uuid.UUID{}) {
+		id, _ = uuid.NewV7()
+	}
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO tx_confirmations (chain_id, tx_hash, status, block_height, block_hash, confirmations, first_seen_at, confirmed_at, finalized_at)
-		 VALUES ($1,$2,$3,$4,$5,$6,COALESCE($7,now()),$8,$9)
+		`INSERT INTO tx_confirmations (id, chain_id, tx_hash, status, block_height, block_hash, confirmations, first_seen_at, confirmed_at, finalized_at)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,COALESCE($8,now()),$9,$10)
 		 ON CONFLICT (chain_id, tx_hash) DO UPDATE SET
 		   status=EXCLUDED.status, block_height=EXCLUDED.block_height, block_hash=EXCLUDED.block_hash,
-		   confirmations=EXCLUDED.confirmations, confirmed_at=EXCLUDED.confirmed_at, finalized_at=EXCLUDED.finalized_at`,
-		c.ChainID, c.TxHash, string(c.Status), c.BlockHeight, c.BlockHash, c.Confirmations, c.FirstSeenAt, c.ConfirmedAt, c.FinalizedAt)
+		   confirmations=EXCLUDED.confirmations, confirmed_at=EXCLUDED.confirmed_at, finalized_at=EXCLUDED.finalized_at,
+		   updated_at=now()`,
+		id, c.ChainID, c.TxHash, string(c.Status), c.BlockHeight, c.BlockHash, c.Confirmations, c.FirstSeenAt, c.ConfirmedAt, c.FinalizedAt)
 	return err
 }
 
 func (s *ConfirmationStore) Get(ctx context.Context, chainID, txHash string) (*store.Confirmation, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT chain_id, tx_hash, status, block_height, block_hash, confirmations, first_seen_at, confirmed_at, finalized_at
+		`SELECT id, chain_id, tx_hash, status, block_height, block_hash, confirmations, first_seen_at, confirmed_at, finalized_at
 		 FROM tx_confirmations WHERE chain_id=$1 AND tx_hash=$2`, chainID, txHash)
 	var c store.Confirmation
 	var status string
-	if err := row.Scan(&c.ChainID, &c.TxHash, &status, &c.BlockHeight, &c.BlockHash, &c.Confirmations, &c.FirstSeenAt, &c.ConfirmedAt, &c.FinalizedAt); err != nil {
+	if err := row.Scan(&c.ID, &c.ChainID, &c.TxHash, &status, &c.BlockHeight, &c.BlockHash, &c.Confirmations, &c.FirstSeenAt, &c.ConfirmedAt, &c.FinalizedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, &store.ErrNotFound{Chain: chainID, Key: txHash}
 		}
@@ -155,7 +165,7 @@ func (s *ConfirmationStore) Get(ctx context.Context, chainID, txHash string) (*s
 
 func (s *ConfirmationStore) ListByStatus(ctx context.Context, chainID string, status chain.Status) ([]*store.Confirmation, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT chain_id, tx_hash, status, block_height, block_hash, confirmations, first_seen_at, confirmed_at, finalized_at
+		`SELECT id, chain_id, tx_hash, status, block_height, block_hash, confirmations, first_seen_at, confirmed_at, finalized_at
 		 FROM tx_confirmations WHERE chain_id=$1 AND status=$2`, chainID, string(status))
 	if err != nil {
 		return nil, err
@@ -165,7 +175,7 @@ func (s *ConfirmationStore) ListByStatus(ctx context.Context, chainID string, st
 	for rows.Next() {
 		var c store.Confirmation
 		var st string
-		if err := rows.Scan(&c.ChainID, &c.TxHash, &st, &c.BlockHeight, &c.BlockHash, &c.Confirmations, &c.FirstSeenAt, &c.ConfirmedAt, &c.FinalizedAt); err != nil {
+		if err := rows.Scan(&c.ID, &c.ChainID, &c.TxHash, &st, &c.BlockHeight, &c.BlockHash, &c.Confirmations, &c.FirstSeenAt, &c.ConfirmedAt, &c.FinalizedAt); err != nil {
 			return nil, err
 		}
 		c.Status = chain.Status(st)
@@ -176,7 +186,7 @@ func (s *ConfirmationStore) ListByStatus(ctx context.Context, chainID string, st
 
 func (s *ConfirmationStore) ListAboveHeight(ctx context.Context, chainID string, height uint64) ([]*store.Confirmation, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT chain_id, tx_hash, status, block_height, block_hash, confirmations, first_seen_at, confirmed_at, finalized_at
+		`SELECT id, chain_id, tx_hash, status, block_height, block_hash, confirmations, first_seen_at, confirmed_at, finalized_at
 		 FROM tx_confirmations WHERE chain_id=$1 AND block_height > $2`, chainID, height)
 	if err != nil {
 		return nil, err
@@ -186,7 +196,7 @@ func (s *ConfirmationStore) ListAboveHeight(ctx context.Context, chainID string,
 	for rows.Next() {
 		var c store.Confirmation
 		var st string
-		if err := rows.Scan(&c.ChainID, &c.TxHash, &st, &c.BlockHeight, &c.BlockHash, &c.Confirmations, &c.FirstSeenAt, &c.ConfirmedAt, &c.FinalizedAt); err != nil {
+		if err := rows.Scan(&c.ID, &c.ChainID, &c.TxHash, &st, &c.BlockHeight, &c.BlockHash, &c.Confirmations, &c.FirstSeenAt, &c.ConfirmedAt, &c.FinalizedAt); err != nil {
 			return nil, err
 		}
 		c.Status = chain.Status(st)
@@ -204,9 +214,9 @@ func (s *ConfirmationStore) Transition(ctx context.Context, chainID, txHash stri
 	var c store.Confirmation
 	var st string
 	row := tx.QueryRowContext(ctx,
-		`SELECT chain_id, tx_hash, status, block_height, block_hash, confirmations, first_seen_at, confirmed_at, finalized_at
+		`SELECT id, chain_id, tx_hash, status, block_height, block_hash, confirmations, first_seen_at, confirmed_at, finalized_at
 		 FROM tx_confirmations WHERE chain_id=$1 AND tx_hash=$2 FOR UPDATE`, chainID, txHash)
-	if err := row.Scan(&c.ChainID, &c.TxHash, &st, &c.BlockHeight, &c.BlockHash, &c.Confirmations, &c.FirstSeenAt, &c.ConfirmedAt, &c.FinalizedAt); err != nil {
+	if err := row.Scan(&c.ID, &c.ChainID, &c.TxHash, &st, &c.BlockHeight, &c.BlockHash, &c.Confirmations, &c.FirstSeenAt, &c.ConfirmedAt, &c.FinalizedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, false, &store.ErrNotFound{Chain: chainID, Key: txHash}
 		}
@@ -224,7 +234,7 @@ func (s *ConfirmationStore) Transition(ctx context.Context, chainID, txHash stri
 		mutator(&c)
 	}
 	if _, err := tx.ExecContext(ctx,
-		`UPDATE tx_confirmations SET status=$3, block_height=$4, block_hash=$5, confirmations=$6, confirmed_at=$7, finalized_at=$8
+		`UPDATE tx_confirmations SET status=$3, block_height=$4, block_hash=$5, confirmations=$6, confirmed_at=$7, finalized_at=$8, updated_at=now()
 		 WHERE chain_id=$1 AND tx_hash=$2`, chainID, txHash, string(c.Status), c.BlockHeight, c.BlockHash, c.Confirmations, c.ConfirmedAt, c.FinalizedAt); err != nil {
 		return nil, false, err
 	}
@@ -239,20 +249,24 @@ func (s *ConfirmationStore) Transition(ctx context.Context, chainID, txHash stri
 type TipStore struct{ db *sql.DB }
 
 func (s *TipStore) Upsert(ctx context.Context, t *store.Tip) error {
+	id := t.ID
+	if id == (uuid.UUID{}) {
+		id, _ = uuid.NewV7()
+	}
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO chain_tips (chain_id, tip_height, tip_hash, finalized_height, updated_at)
-		 VALUES ($1,$2,$3,$4,COALESCE($5,now()))
+		`INSERT INTO chain_tips (id, chain_id, tip_height, tip_hash, finalized_height, updated_at)
+		 VALUES ($1,$2,$3,$4,$5,COALESCE($6,now()))
 		 ON CONFLICT (chain_id) DO UPDATE SET tip_height=EXCLUDED.tip_height, tip_hash=EXCLUDED.tip_hash,
-		   finalized_height=EXCLUDED.finalized_height, updated_at=EXCLUDED.updated_at`,
-		t.ChainID, t.TipHeight, t.TipHash, t.FinalizedHeight, t.UpdatedAt)
+		   finalized_height=EXCLUDED.finalized_height, updated_at=now()`,
+		id, t.ChainID, t.TipHeight, t.TipHash, t.FinalizedHeight, t.UpdatedAt)
 	return err
 }
 
 func (s *TipStore) Get(ctx context.Context, chainID string) (*store.Tip, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT chain_id, tip_height, tip_hash, finalized_height, updated_at FROM chain_tips WHERE chain_id=$1`, chainID)
+		`SELECT id, chain_id, tip_height, tip_hash, finalized_height, updated_at FROM chain_tips WHERE chain_id=$1`, chainID)
 	var t store.Tip
-	if err := row.Scan(&t.ChainID, &t.TipHeight, &t.TipHash, &t.FinalizedHeight, &t.UpdatedAt); err != nil {
+	if err := row.Scan(&t.ID, &t.ChainID, &t.TipHeight, &t.TipHash, &t.FinalizedHeight, &t.UpdatedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, &store.ErrNotFound{Chain: chainID, Key: "tip"}
 		}
@@ -266,20 +280,24 @@ func (s *TipStore) Get(ctx context.Context, chainID string) (*store.Tip, error) 
 type FeeStore struct{ db *sql.DB }
 
 func (s *FeeStore) Insert(ctx context.Context, r *store.FeeEstimateRow) error {
+	id := r.ID
+	if id == (uuid.UUID{}) {
+		id, _ = uuid.NewV7()
+	}
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO fee_estimates (chain_id, priority, gas_limit, max_fee_per_gas, max_priority_fee_per_gas, gas_price, total_fee, sample_count, strategy, computed_at)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,COALESCE($10,now()))`,
-		r.ChainID, string(r.Priority), r.GasLimit, bigStr(r.MaxFeePerGas), bigStr(r.MaxPriorityFeePerGas), bigStr(r.GasPrice), bigStr(r.TotalFee), r.SampleCount, r.Strategy, r.ComputedAt)
+		`INSERT INTO fee_estimates (id, chain_id, priority, gas_limit, max_fee_per_gas, max_priority_fee_per_gas, gas_price, total_fee, sample_count, strategy, computed_at)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,COALESCE($11,now()))`,
+		id, r.ChainID, string(r.Priority), r.GasLimit, bigStr(r.MaxFeePerGas), bigStr(r.MaxPriorityFeePerGas), bigStr(r.GasPrice), bigStr(r.TotalFee), r.SampleCount, r.Strategy, r.ComputedAt)
 	return err
 }
 
 func (s *FeeStore) Latest(ctx context.Context, chainID string, p chain.Priority) (*store.FeeEstimateRow, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT chain_id, priority, gas_limit, max_fee_per_gas, max_priority_fee_per_gas, gas_price, total_fee, sample_count, strategy, computed_at
+		`SELECT id, chain_id, priority, gas_limit, max_fee_per_gas, max_priority_fee_per_gas, gas_price, total_fee, sample_count, strategy, computed_at
 		 FROM fee_estimates WHERE chain_id=$1 AND priority=$2 ORDER BY computed_at DESC LIMIT 1`, chainID, string(p))
 	var r store.FeeEstimateRow
 	var mfp, mpf, gp, tf, prio string
-	if err := row.Scan(&r.ChainID, &prio, &r.GasLimit, &mfp, &mpf, &gp, &tf, &r.SampleCount, &r.Strategy, &r.ComputedAt); err != nil {
+	if err := row.Scan(&r.ID, &r.ChainID, &prio, &r.GasLimit, &mfp, &mpf, &gp, &tf, &r.SampleCount, &r.Strategy, &r.ComputedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, &store.ErrNotFound{Chain: chainID, Key: string(p)}
 		}
@@ -298,16 +316,20 @@ func (s *FeeStore) Latest(ctx context.Context, chainID string, p chain.Priority)
 type ReorgStore struct{ db *sql.DB }
 
 func (s *ReorgStore) Append(ctx context.Context, e *store.ReorgEvent) error {
+	id := e.ID
+	if id == (uuid.UUID{}) {
+		id, _ = uuid.NewV7()
+	}
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO reorg_events (chain_id, detected_at, old_tip_hash, new_tip_hash, common_ancestor_height, affected_tx_hashes)
-		 VALUES ($1,COALESCE($2,now()),$3,$4,$5,$6)`,
-		e.ChainID, e.DetectedAt, e.OldTipHash, e.NewTipHash, e.CommonAncestorHeight, pqArray(e.AffectedTxHashes))
+		`INSERT INTO reorg_events (id, chain_id, detected_at, old_tip_hash, new_tip_hash, common_ancestor_height, affected_tx_hashes)
+		 VALUES ($1,$2,COALESCE($3,now()),$4,$5,$6,$7)`,
+		id, e.ChainID, e.DetectedAt, e.OldTipHash, e.NewTipHash, e.CommonAncestorHeight, pqArray(e.AffectedTxHashes))
 	return err
 }
 
 func (s *ReorgStore) List(ctx context.Context, chainID string) ([]*store.ReorgEvent, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT chain_id, detected_at, old_tip_hash, new_tip_hash, common_ancestor_height, affected_tx_hashes
+		`SELECT id, chain_id, detected_at, old_tip_hash, new_tip_hash, common_ancestor_height, affected_tx_hashes
 		 FROM reorg_events WHERE chain_id=$1 ORDER BY detected_at`, chainID)
 	if err != nil {
 		return nil, err
@@ -317,7 +339,7 @@ func (s *ReorgStore) List(ctx context.Context, chainID string) ([]*store.ReorgEv
 	for rows.Next() {
 		var e store.ReorgEvent
 		var arr sql.NullString
-		if err := rows.Scan(&e.ChainID, &e.DetectedAt, &e.OldTipHash, &e.NewTipHash, &e.CommonAncestorHeight, &arr); err != nil {
+		if err := rows.Scan(&e.ID, &e.ChainID, &e.DetectedAt, &e.OldTipHash, &e.NewTipHash, &e.CommonAncestorHeight, &arr); err != nil {
 			return nil, err
 		}
 		e.AffectedTxHashes = parseArray(arr.String)
@@ -331,10 +353,14 @@ func (s *ReorgStore) List(ctx context.Context, chainID string) ([]*store.ReorgEv
 type OutboxStore struct{ db *sql.DB }
 
 func (s *OutboxStore) Append(ctx context.Context, e *store.OutboxEntry) (bool, error) {
+	id := e.ID
+	if id == (uuid.UUID{}) {
+		id, _ = uuid.NewV7()
+	}
 	res, err := s.db.ExecContext(ctx,
-		`INSERT INTO outbox (chain_id, tx_hash, status, block_height, event_type, payload, created_at)
-		 VALUES ($1,$2,$3,$4,$5,$6,COALESCE($7,now())) ON CONFLICT (chain_id, tx_hash, status, block_height) DO NOTHING`,
-		e.ChainID, e.TxHash, string(e.Status), e.BlockHeight, e.EventType, e.Payload, e.CreatedAt)
+		`INSERT INTO outbox (id, chain_id, tx_hash, status, block_height, event_type, payload, created_at)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,COALESCE($8,now())) ON CONFLICT (chain_id, tx_hash, status, block_height) DO NOTHING`,
+		id, e.ChainID, e.TxHash, string(e.Status), e.BlockHeight, e.EventType, e.Payload, e.CreatedAt)
 	if err != nil {
 		return false, err
 	}
@@ -365,14 +391,14 @@ func (s *OutboxStore) ListPending(ctx context.Context, limit int) ([]*store.Outb
 	return out, rows.Err()
 }
 
-func (s *OutboxStore) MarkEmitted(ctx context.Context, id int64) error {
-	res, err := s.db.ExecContext(ctx, `UPDATE outbox SET emitted_at=now() WHERE id=$1`, id)
+func (s *OutboxStore) MarkEmitted(ctx context.Context, id uuid.UUID) error {
+	res, err := s.db.ExecContext(ctx, `UPDATE outbox SET emitted_at=now(), updated_at=now() WHERE id=$1`, id)
 	if err != nil {
 		return err
 	}
 	n, _ := res.RowsAffected()
 	if n == 0 {
-		return &store.ErrNotFound{Chain: "outbox", Key: fmt.Sprintf("%d", id)}
+		return &store.ErrNotFound{Chain: "outbox", Key: id.String()}
 	}
 	return nil
 }

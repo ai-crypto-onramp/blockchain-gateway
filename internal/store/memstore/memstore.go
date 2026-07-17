@@ -19,6 +19,7 @@ import (
 
 	"github.com/ai-crypto-onramp/blockchain-gateway/internal/chain"
 	"github.com/ai-crypto-onramp/blockchain-gateway/internal/store"
+	"github.com/google/uuid"
 )
 
 func key(chainID, txHash string) string { return chainID + "|" + txHash }
@@ -42,6 +43,9 @@ func (s *BroadcastStore) Insert(_ context.Context, b *store.Broadcast) error {
 		return nil
 	}
 	c := *b
+	if c.ID == (uuid.UUID{}) {
+		c.ID, _ = uuid.NewV7()
+	}
 	if c.SubmittedAt.IsZero() {
 		c.SubmittedAt = time.Now()
 	}
@@ -83,6 +87,9 @@ func (s *ConfirmationStore) Upsert(_ context.Context, c *store.Confirmation) err
 	defer s.mu.Unlock()
 	k := key(c.ChainID, c.TxHash)
 	clone := *c
+	if clone.ID == (uuid.UUID{}) {
+		clone.ID, _ = uuid.NewV7()
+	}
 	if clone.FirstSeenAt.IsZero() {
 		clone.FirstSeenAt = time.Now()
 	}
@@ -167,6 +174,9 @@ func (s *TipStore) Upsert(_ context.Context, t *store.Tip) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	clone := *t
+	if clone.ID == (uuid.UUID{}) {
+		clone.ID, _ = uuid.NewV7()
+	}
 	if clone.UpdatedAt.IsZero() {
 		clone.UpdatedAt = time.Now()
 	}
@@ -204,6 +214,9 @@ func (s *FeeStore) Insert(_ context.Context, r *store.FeeEstimateRow) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	clone := *r
+	if clone.ID == (uuid.UUID{}) {
+		clone.ID, _ = uuid.NewV7()
+	}
 	if clone.ComputedAt.IsZero() {
 		clone.ComputedAt = time.Now()
 	}
@@ -238,6 +251,9 @@ func (s *ReorgStore) Append(_ context.Context, e *store.ReorgEvent) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	clone := *e
+	if clone.ID == (uuid.UUID{}) {
+		clone.ID, _ = uuid.NewV7()
+	}
 	if clone.DetectedAt.IsZero() {
 		clone.DetectedAt = time.Now()
 	}
@@ -265,7 +281,6 @@ type OutboxStore struct {
 	mu       sync.Mutex
 	entries  []*store.OutboxEntry
 	seen     map[string]bool
-	seq      int64
 }
 
 // NewOutboxStore returns an empty in-memory OutboxStore.
@@ -284,9 +299,10 @@ func (s *OutboxStore) Append(_ context.Context, e *store.OutboxEntry) (bool, err
 	if s.seen[dk] {
 		return false, nil
 	}
-	s.seq++
 	clone := *e
-	clone.ID = s.seq
+	if clone.ID == (uuid.UUID{}) {
+		clone.ID, _ = uuid.NewV7()
+	}
 	if clone.CreatedAt.IsZero() {
 		clone.CreatedAt = time.Now()
 	}
@@ -311,7 +327,7 @@ func (s *OutboxStore) ListPending(_ context.Context, limit int) ([]*store.Outbox
 	return out, nil
 }
 
-func (s *OutboxStore) MarkEmitted(_ context.Context, id int64) error {
+func (s *OutboxStore) MarkEmitted(_ context.Context, id uuid.UUID) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, e := range s.entries {
@@ -320,7 +336,7 @@ func (s *OutboxStore) MarkEmitted(_ context.Context, id int64) error {
 			return nil
 		}
 	}
-	return &store.ErrNotFound{Chain: "outbox", Key: fmt.Sprintf("%d", id)}
+	return &store.ErrNotFound{Chain: "outbox", Key: id.String()}
 }
 
 // Snapshot returns a copy of all outbox entries (test helper).

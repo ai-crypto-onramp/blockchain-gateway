@@ -22,24 +22,24 @@ type Status string
 
 const (
 	// StatusBroadcast indicates the tx has been submitted to the mempool.
-	StatusBroadcast Status = "broadcast"
+	StatusBroadcast Status = "BROADCAST"
 	// StatusMempool indicates the tx is pending in the mempool.
-	StatusMempool Status = "mempool"
+	StatusMempool Status = "MEMPOOL"
 	// StatusConfirmed indicates the tx is included in a block but not yet
 	// final.
-	StatusConfirmed Status = "confirmed"
+	StatusConfirmed Status = "CONFIRMED"
 	// StatusFinalized indicates the tx is finalized per the chain finality
 	// gadget.
-	StatusFinalized Status = "finalized"
+	StatusFinalized Status = "FINALIZED"
 	// StatusDropped indicates the tx was dropped from the mempool without
 	// inclusion.
-	StatusDropped Status = "dropped"
+	StatusDropped Status = "DROPPED"
 	// StatusReplaced indicates the tx was replaced by a higher-fee tx.
-	StatusReplaced Status = "replaced"
+	StatusReplaced Status = "REPLACED"
 	// StatusReorgedOut indicates the tx's block was reorged out.
-	StatusReorgedOut Status = "reorged_out"
+	StatusReorgedOut Status = "REORGED_OUT"
 	// StatusFailed indicates the tx was included but reverted.
-	StatusFailed Status = "failed"
+	StatusFailed Status = "FAILED"
 )
 
 // IsTerminal reports whether s is a terminal lifecycle state.
@@ -81,9 +81,9 @@ func (s Status) CanTransitionTo(next Status) bool {
 type Priority string
 
 const (
-	PriorityLow      Priority = "low"
-	PriorityStandard Priority = "standard"
-	PriorityHigh     Priority = "high"
+	PriorityLow      Priority = "LOW"
+	PriorityStandard Priority = "STANDARD"
+	PriorityHigh     Priority = "HIGH"
 )
 
 // Head represents a new chain head emitted by SubscribeHeads.

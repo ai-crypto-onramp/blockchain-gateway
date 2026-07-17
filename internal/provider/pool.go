@@ -79,12 +79,12 @@ func (b *breaker) State() string {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if b.failures < b.threshold {
-		return "closed"
+		return "CLOSED"
 	}
 	if time.Since(b.openedAt) > b.coolDown {
-		return "half-open"
+		return "HALF_OPEN"
 	}
-	return "open"
+	return "OPEN"
 }
 
 // Pool is a per-chain provider pool. It is safe for concurrent use.
@@ -193,7 +193,7 @@ func (p *Pool) BreakerState(url string) string {
 			return e.breaker.State()
 		}
 	}
-	return "unknown"
+	return "UNKNOWN"
 }
 
 // URLs returns the configured provider URLs.

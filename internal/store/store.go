@@ -11,10 +11,12 @@ import (
 	"time"
 
 	"github.com/ai-crypto-onramp/blockchain-gateway/internal/chain"
+	"github.com/google/uuid"
 )
 
 // Broadcast is the persisted record of one broadcast attempt.
 type Broadcast struct {
+	ID          uuid.UUID `json:"id"`
 	ChainID     string    `json:"chain_id"`
 	TxHash      string    `json:"tx_hash"`
 	SignedTx    []byte    `json:"signed_tx"`
@@ -36,15 +38,16 @@ type BroadcastStore interface {
 
 // Confirmation is the persisted confirmation status of a broadcast.
 type Confirmation struct {
-	ChainID       string    `json:"chain_id"`
-	TxHash        string    `json:"tx_hash"`
-	Status        chain.Status `json:"status"`
-	BlockHeight   uint64    `json:"block_height"`
-	BlockHash     string    `json:"block_hash"`
-	Confirmations uint64    `json:"confirmations"`
-	FirstSeenAt   time.Time `json:"first_seen_at"`
-	ConfirmedAt   time.Time `json:"confirmed_at"`
-	FinalizedAt   time.Time `json:"finalized_at"`
+	ID            uuid.UUID     `json:"id"`
+	ChainID       string        `json:"chain_id"`
+	TxHash        string        `json:"tx_hash"`
+	Status        chain.Status  `json:"status"`
+	BlockHeight   uint64        `json:"block_height"`
+	BlockHash     string        `json:"block_hash"`
+	Confirmations uint64        `json:"confirmations"`
+	FirstSeenAt   time.Time     `json:"first_seen_at"`
+	ConfirmedAt   time.Time     `json:"confirmed_at"`
+	FinalizedAt   time.Time     `json:"finalized_at"`
 }
 
 // ConfirmationStore persists and updates confirmation state.
@@ -58,6 +61,7 @@ type ConfirmationStore interface {
 
 // Tip is the persisted chain tip.
 type Tip struct {
+	ID              uuid.UUID `json:"id"`
 	ChainID         string    `json:"chain_id"`
 	TipHeight       uint64    `json:"tip_height"`
 	TipHash         string    `json:"tip_hash"`
@@ -73,16 +77,17 @@ type TipStore interface {
 
 // FeeEstimateRow is the persisted fee estimate sample.
 type FeeEstimateRow struct {
-	ChainID              string    `json:"chain_id"`
+	ID                   uuid.UUID     `json:"id"`
+	ChainID              string        `json:"chain_id"`
 	Priority             chain.Priority `json:"priority"`
-	GasLimit             uint64    `json:"gas_limit"`
-	MaxFeePerGas         *big.Int  `json:"max_fee_per_gas"`
-	MaxPriorityFeePerGas *big.Int  `json:"max_priority_fee_per_gas"`
-	GasPrice             *big.Int  `json:"gas_price"`
-	TotalFee             *big.Int  `json:"total_fee"`
-	SampleCount          int       `json:"sample_count"`
-	ComputedAt           time.Time `json:"computed_at"`
-	Strategy             string    `json:"strategy"`
+	GasLimit             uint64        `json:"gas_limit"`
+	MaxFeePerGas         *big.Int      `json:"max_fee_per_gas"`
+	MaxPriorityFeePerGas *big.Int      `json:"max_priority_fee_per_gas"`
+	GasPrice             *big.Int      `json:"gas_price"`
+	TotalFee             *big.Int      `json:"total_fee"`
+	SampleCount          int           `json:"sample_count"`
+	ComputedAt           time.Time     `json:"computed_at"`
+	Strategy             string        `json:"strategy"`
 }
 
 // FeeStore persists fee estimate samples for trend analysis.
@@ -93,6 +98,7 @@ type FeeStore interface {
 
 // ReorgEvent is an append-only audit record of a chain reorg.
 type ReorgEvent struct {
+	ID                   uuid.UUID `json:"id"`
 	ChainID              string    `json:"chain_id"`
 	DetectedAt           time.Time `json:"detected_at"`
 	OldTipHash           string    `json:"old_tip_hash"`
@@ -109,15 +115,15 @@ type ReorgStore interface {
 
 // OutboxEntry is a deduped outbound event awaiting emission.
 type OutboxEntry struct {
-	ID          int64     `json:"id"`
-	ChainID     string    `json:"chain_id"`
-	TxHash      string    `json:"tx_hash"`
+	ID          uuid.UUID    `json:"id"`
+	ChainID     string       `json:"chain_id"`
+	TxHash      string       `json:"tx_hash"`
 	Status      chain.Status `json:"status"`
-	BlockHeight uint64    `json:"block_height"`
-	EventType   string    `json:"event_type"`
-	Payload     []byte    `json:"payload"`
-	CreatedAt   time.Time `json:"created_at"`
-	EmittedAt   time.Time `json:"emitted_at"`
+	BlockHeight uint64       `json:"block_height"`
+	EventType   string       `json:"event_type"`
+	Payload     []byte       `json:"payload"`
+	CreatedAt   time.Time    `json:"created_at"`
+	EmittedAt   time.Time    `json:"emitted_at"`
 }
 
 // OutboxStore persists events for at-least-once, deduped emission.
@@ -126,7 +132,7 @@ type OutboxStore interface {
 	// status, block_height) already exists. Returns true if inserted.
 	Append(ctx context.Context, e *OutboxEntry) (bool, error)
 	ListPending(ctx context.Context, limit int) ([]*OutboxEntry, error)
-	MarkEmitted(ctx context.Context, id int64) error
+	MarkEmitted(ctx context.Context, id uuid.UUID) error
 }
 
 // ErrNotFound is returned by stores when a row lookup misses.

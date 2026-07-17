@@ -113,7 +113,7 @@ func TestHandleBroadcastMissingSignedTx(t *testing.T) {
 func TestHandleEstimateFee(t *testing.T) {
 	deps, _ := newTestDeps(t)
 	r := NewRouter(deps)
-	body := bytes.NewBufferString(`{"to":"0xto","priority":"high"}`)
+	body := bytes.NewBufferString(`{"to":"0xto","priority":"HIGH"}`)
 	req := httptest.NewRequest(http.MethodPost, "/v1/chains/ethereum/estimate-fee", body)
 	rr := httptest.NewRecorder()
 	r.ServeHTTP(rr, req)
@@ -173,7 +173,7 @@ func TestHandleGetTxStatusFromStore(t *testing.T) {
 	}
 	var resp map[string]any
 	_ = json.NewDecoder(rr.Body).Decode(&resp)
-	if resp["status"] != "confirmed" {
+	if resp["status"] != "CONFIRMED" {
 		t.Errorf("status: %+v", resp)
 	}
 }
@@ -241,7 +241,7 @@ func TestSymbolFor(t *testing.T) {
 func TestHandleEstimateFeeUnknownChain(t *testing.T) {
 	deps, _ := newTestDeps(t)
 	r := NewRouter(deps)
-	body := bytes.NewBufferString(`{"priority":"high"}`)
+	body := bytes.NewBufferString(`{"priority":"HIGH"}`)
 	req := httptest.NewRequest(http.MethodPost, "/v1/chains/nope/estimate-fee", body)
 	rr := httptest.NewRecorder()
 	r.ServeHTTP(rr, req)
@@ -262,15 +262,15 @@ func TestHandleEstimateFeeEmptyPriority(t *testing.T) {
 	}
 	var resp map[string]any
 	_ = json.NewDecoder(rr.Body).Decode(&resp)
-	if resp["priority"] != "standard" {
-		t.Errorf("priority: %v want standard", resp["priority"])
+	if resp["priority"] != "STANDARD" {
+		t.Errorf("priority: %v want STANDARD", resp["priority"])
 	}
 }
 
 func TestHandleEstimateFeeWithAmount(t *testing.T) {
 	deps, _ := newTestDeps(t)
 	r := NewRouter(deps)
-	body := bytes.NewBufferString(`{"amount":"1000","priority":"low"}`)
+	body := bytes.NewBufferString(`{"amount":"1000","priority":"LOW"}`)
 	req := httptest.NewRequest(http.MethodPost, "/v1/chains/ethereum/estimate-fee", body)
 	rr := httptest.NewRecorder()
 	r.ServeHTTP(rr, req)
@@ -337,7 +337,7 @@ func TestHandleGetTxStatusAdapterFallback(t *testing.T) {
 	}
 	var resp map[string]any
 	_ = json.NewDecoder(rr.Body).Decode(&resp)
-	if resp["status"] != "confirmed" {
+	if resp["status"] != "CONFIRMED" {
 		t.Errorf("status: %v", resp)
 	}
 	if resp["confirmations"] != float64(2) {

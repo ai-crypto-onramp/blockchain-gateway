@@ -87,8 +87,8 @@ func TestPoolBreakerRecovers(t *testing.T) {
 		_, done, _ := p.ForWrite()
 		done(errors.New("fail"))
 	}
-	if state := p.BreakerState("http://a"); state != "open" && state != "half-open" {
-		t.Errorf("expected open/half-open, got %s", state)
+	if state := p.BreakerState("http://a"); state != "OPEN" && state != "HALF_OPEN" {
+		t.Errorf("expected OPEN/HALF_OPEN, got %s", state)
 	}
 }
 
