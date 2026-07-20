@@ -4,9 +4,15 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 	"time"
 )
+
+func TestMain(m *testing.M) {
+	os.Setenv("DEV_MODE", "1")
+	os.Exit(m.Run())
+}
 
 func TestBuildDefault(t *testing.T) {
 	cfg := LoadConfig()
