@@ -13,10 +13,10 @@ import (
 
 // Log records audit events locally and forwards them to the event bus.
 type Log struct {
-	mu       sync.Mutex
-	recent   []eventbus.Event
-	max      int
-	bus      *eventbus.Bus
+	mu     sync.Mutex
+	recent []eventbus.Event
+	max    int
+	bus    *eventbus.Bus
 }
 
 // New returns a Log that forwards to bus.

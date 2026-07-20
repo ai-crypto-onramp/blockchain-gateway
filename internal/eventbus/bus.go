@@ -1,17 +1,15 @@
-// Package eventbus publishes tx lifecycle events to Notification,
-// Reconciliation, and the Audit Event Log via an at-least-once outbox
-// deduped by (chain, tx_hash, status, block_height). When the bus is
-// unavailable, events fall back to a synchronous POST to
-// AUDIT_EVENT_LOG_URL with retry/backoff.
+// Package eventbus publishes tx lifecycle events to Notification and
+// Reconciliation via an at-least-once outbox deduped by
+// (chain, tx_hash, status, block_height). Audit emission is handled by
+// the app layer's kafkaAuditSink (publishing the canonical audit.v1
+// envelope) — the bus no longer posts to AUDIT_EVENT_LOG_URL.
 package eventbus
 
 import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 	"sync"
@@ -47,24 +45,19 @@ type Publisher interface {
 // Bus is the at-least-once event bus with an outbox for dedup. It is safe
 // for concurrent use.
 type Bus struct {
-	outbox     store.OutboxStore
-	bus        Publisher
-	auditURL   string
-	httpClient *http.Client
-	mu         sync.Mutex
-	deduped    int64
-	emitted    int64
-	failed     int64
+	outbox  store.OutboxStore
+	bus     Publisher
+	mu      sync.Mutex
+	deduped int64
+	emitted int64
+	failed  int64
 }
 
-// NewBus returns a Bus. bus may be nil (audit fallback only). auditURL is
-// the synchronous fallback endpoint.
-func NewBus(outbox store.OutboxStore, bus Publisher, auditURL string) *Bus {
+// NewBus returns a Bus. bus may be nil (no external publisher).
+func NewBus(outbox store.OutboxStore, bus Publisher, _ string) *Bus {
 	return &Bus{
-		outbox:     outbox,
-		bus:        bus,
-		auditURL:   auditURL,
-		httpClient: &http.Client{Timeout: 5 * time.Second},
+		outbox: outbox,
+		bus:    bus,
 	}
 }
 
@@ -108,34 +101,7 @@ func (b *Bus) publish(ctx context.Context, e Event) error {
 			return nil
 		}
 	}
-	// Fallback: synchronous POST to AUDIT_EVENT_LOG_URL with retry/backoff.
-	if b.auditURL == "" {
-		return nil
-	}
-	body, _ := json.Marshal(e)
-	backoff := 200 * time.Millisecond
-	for attempt := 0; attempt < 3; attempt++ {
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, b.auditURL, bytes.NewReader(body))
-		if err != nil {
-			return err
-		}
-		req.Header.Set("Content-Type", "application/json")
-		resp, err := b.httpClient.Do(req)
-		if err == nil {
-			_, _ = io.Copy(io.Discard, resp.Body)
-			_ = resp.Body.Close()
-			if resp.StatusCode < 400 {
-				return nil
-			}
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(backoff):
-		}
-		backoff *= 2
-	}
-	return errors.New("audit fallback exhausted")
+	return nil
 }
 
 func (b *Bus) markDeduped()  { b.mu.Lock(); b.deduped++; b.mu.Unlock() }
@@ -262,7 +228,7 @@ func NewKafkaPublisherFromURL(url string) (*KafkaPublisher, error) {
 // Publish writes the encoded event to Kafka, keyed by tx_hash.
 func (p *KafkaPublisher) Publish(ctx context.Context, e Event) error {
 	if p == nil || p.writer == nil {
-		return errors.New("eventbus kafka: not connected")
+		return fmt.Errorf("eventbus kafka: not connected")
 	}
 	body, err := json.Marshal(e)
 	if err != nil {

@@ -3,12 +3,9 @@ package eventbus
 import (
 	"context"
 	"encoding/json"
-	"fmt"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -31,45 +28,6 @@ func TestBusDedup(t *testing.T) {
 	emitted, deduped, failed := bus.Stats()
 	if emitted != 1 || deduped != 1 || failed != 0 {
 		t.Errorf("emitted=%d deduped=%d failed=%d", emitted, deduped, failed)
-	}
-}
-
-func TestBusAuditFallback(t *testing.T) {
-	var received atomic.Int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		received.Add(1)
-		_, _ = io.Copy(io.Discard, r.Body)
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer srv.Close()
-	outbox := memstore.NewOutboxStore()
-	bus := NewBus(outbox, nil, srv.URL)
-	if err := bus.Emit(context.Background(), Event{Type: "tx.confirmed", ChainID: "ethereum", TxHash: "0x1", Status: chain.StatusConfirmed, BlockHeight: 100}); err != nil {
-		t.Fatalf("emit: %v", err)
-	}
-	if received.Load() != 1 {
-		t.Errorf("audit fallback received: %d", received.Load())
-	}
-}
-
-func TestBusAuditFallbackRetries(t *testing.T) {
-	var attempts atomic.Int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		attempts.Add(1)
-		w.WriteHeader(http.StatusInternalServerError)
-	}))
-	defer srv.Close()
-	outbox := memstore.NewOutboxStore()
-	bus := NewBus(outbox, nil, srv.URL)
-	// Shrink retry backoff by overriding httpClient timeout to keep test
-	// fast enough.
-	bus.httpClient = &http.Client{Timeout: time.Second}
-	// Fallback exhaustion returns an error after 3 attempts; the audit
-	// fallback retries internally, so we only assert that the upstream was
-	// hit at least once.
-	_ = bus.Emit(context.Background(), Event{Type: "tx.confirmed", ChainID: "ethereum", TxHash: "0x1", Status: chain.StatusConfirmed, BlockHeight: 100})
-	if attempts.Load() < 1 {
-		t.Errorf("expected attempts, got %d", attempts.Load())
 	}
 }
 
@@ -201,5 +159,3 @@ func TestKafkaPublisherNilWriterPublish(t *testing.T) {
 		t.Fatalf("close should be no-op on nil writer: %v", err)
 	}
 }
-
-var _ = fmt.Sprintf
