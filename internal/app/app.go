@@ -39,6 +39,7 @@ import (
 	"github.com/ai-crypto-onramp/blockchain-gateway/internal/tip"
 	"github.com/ai-crypto-onramp/blockchain-gateway/internal/walletclient"
 	"github.com/segmentio/kafka-go"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 // Config is the top-level app configuration loaded from env.
@@ -230,7 +231,7 @@ func Build(cfg Config) (*Server, error) {
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           router,
+		Handler:           otelhttp.NewHandler(router, "blockchain-gateway"),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	return &Server{

@@ -11,12 +11,20 @@
 package main
 
 import (
+	"context"
 	"log"
 
 	"github.com/ai-crypto-onramp/blockchain-gateway/internal/app"
+	"github.com/ai-crypto-onramp/blockchain-gateway/internal/otel"
 )
 
 func main() {
+	shutdown, err := otel.Init("blockchain-gateway")
+	if err != nil {
+		log.Fatalf("otel init: %v", err)
+	}
+	defer func() { _ = shutdown(context.Background()) }()
+
 	cfg := app.LoadConfig()
 	srv, err := app.Build(cfg)
 	if err != nil {
