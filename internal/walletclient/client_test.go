@@ -58,34 +58,63 @@ func TestMockFailNthFund(t *testing.T) {
 
 func TestHTTPClientFundSender(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/v1/fund-sender" {
-			t.Errorf("path: %s", r.URL.Path)
+		wantPath := "/v1/wallets/wallet-1/funding-request"
+		if r.URL.Path != wantPath {
+			t.Errorf("path: %s want %s", r.URL.Path, wantPath)
 		}
-		var req FundSenderRequest
+		var req fundingRequestBody
 		_ = json.NewDecoder(r.Body).Decode(&req)
+		if req.Asset != "eth" || req.Amount != "100" || req.Reason == "" {
+			t.Errorf("unexpected funding body: %+v", req)
+		}
 		_ = io.Discard
-		_ = json.NewEncoder(w).Encode(FundSenderResponse{Ok: true, FundingTx: "0xfunding"})
+		_ = json.NewEncoder(w).Encode(fundingResponseBody{Status: "requested"})
 	}))
 	defer srv.Close()
 	c := NewHTTPClient(srv.URL, 2*time.Second)
-	resp, err := c.FundSender(context.Background(), FundSenderRequest{ChainID: "ethereum", Addr: "0x1", Amount: "100"})
-	if err != nil || !resp.Ok || resp.FundingTx != "0xfunding" {
+	resp, err := c.FundSender(context.Background(), FundSenderRequest{WalletID: "wallet-1", ChainID: "ethereum", Addr: "0x1", Amount: "100"})
+	if err != nil || !resp.Ok {
 		t.Fatalf("fund: %+v %v", resp, err)
+	}
+}
+
+func TestHTTPClientFundSenderMissingWalletID(t *testing.T) {
+	c := NewHTTPClient("http://example.com", 2*time.Second)
+	resp, err := c.FundSender(context.Background(), FundSenderRequest{ChainID: "ethereum", Addr: "0x1", Amount: "100"})
+	if err == nil {
+		t.Fatal("expected error when wallet_id missing")
+	}
+	if resp == nil || resp.Ok {
+		t.Fatalf("expected Ok=false response, got %+v", resp)
 	}
 }
 
 func TestHTTPClientAllocateNonce(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/v1/nonce/allocate" {
-			t.Errorf("path: %s", r.URL.Path)
+		wantPath := "/v1/wallets/wallet-1/nonce/allocate"
+		if r.URL.Path != wantPath {
+			t.Errorf("path: %s want %s", r.URL.Path, wantPath)
+		}
+		var req nonceRequestBody
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		if req.Chain != "ethereum" {
+			t.Errorf("unexpected nonce body: %+v", req)
 		}
 		_ = json.NewEncoder(w).Encode(AllocateNonceResponse{Nonce: 42})
 	}))
 	defer srv.Close()
 	c := NewHTTPClient(srv.URL, 2*time.Second)
-	resp, err := c.AllocateNonce(context.Background(), "ethereum", "0x1")
+	resp, err := c.AllocateNonce(context.Background(), "wallet-1", "ethereum")
 	if err != nil || resp.Nonce != 42 {
 		t.Fatalf("nonce: %+v %v", resp, err)
+	}
+}
+
+func TestHTTPClientAllocateNonceMissingWalletID(t *testing.T) {
+	c := NewHTTPClient("http://example.com", 2*time.Second)
+	_, err := c.AllocateNonce(context.Background(), "", "ethereum")
+	if err == nil {
+		t.Fatal("expected error when wallet_id missing")
 	}
 }
 
@@ -95,7 +124,7 @@ func TestHTTPClientErrorStatus(t *testing.T) {
 	}))
 	defer srv.Close()
 	c := NewHTTPClient(srv.URL, 2*time.Second)
-	_, err := c.FundSender(context.Background(), FundSenderRequest{})
+	_, err := c.FundSender(context.Background(), FundSenderRequest{WalletID: "wallet-1"})
 	if err == nil {
 		t.Fatal("expected error on 500")
 	}

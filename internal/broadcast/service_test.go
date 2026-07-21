@@ -5,6 +5,7 @@ import (
 	"errors"
 	"math/big"
 	"testing"
+	"time"
 
 	"github.com/ai-crypto-onramp/blockchain-gateway/internal/chain"
 	"github.com/ai-crypto-onramp/blockchain-gateway/internal/eventbus"
@@ -90,9 +91,9 @@ func TestBroadcastMalformed(t *testing.T) {
 func TestBroadcastAdapterError(t *testing.T) {
 	reg := chain.NewRegistry()
 	reg.Register(chain.NewStubAdapter(chain.StubAdapterOptions{
-		ChainID:      "ethereum",
+		ChainID:        "ethereum",
 		FinalityBlocks: 3,
-		BroadcastErr: errors.New("rpc timeout"),
+		BroadcastErr:   errors.New("rpc timeout"),
 	}))
 	stores := memstore.NewAll()
 	bus := eventbus.NewBus(stores.Outbox, eventbus.NopPublisher{}, "")
@@ -114,6 +115,12 @@ func TestBroadcastWithPrepayment(t *testing.T) {
 	mock := walletclient.NewMock("0xfunding", 7)
 	locks := prepayment.NewCoordinator(prepayment.NewMemRedis(), 0, 0)
 	prepay := prepayment.NewManager(mock, locks, 0)
+	prepay.SetFundingPollInterval(10 * time.Millisecond)
+	// Seed the funding tx as confirmed so the funding-wait loop returns.
+	reg.StubEmitter("ethereum").SeedTx(
+		&chain.Tx{ChainID: "ethereum", Hash: "0xfunding", Status: chain.StatusConfirmed, BlockHeight: 1},
+		&chain.TxStatus{ChainID: "ethereum", TxHash: "0xfunding", Status: chain.StatusConfirmed, Confirmations: 1, BlockHeight: 1},
+	)
 	watcher := mempool.NewWatcher(nil, 0)
 	svc := NewService(reg, stores.Broadcast, stores.Confirmation, prepay, watcher, bus, nil, Options{RetryMax: 1})
 	resp, err := svc.Broadcast(context.Background(), &Request{

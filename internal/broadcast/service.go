@@ -26,7 +26,7 @@ import (
 
 // Service is the broadcast entrypoint.
 type Service struct {
-	registry  *chain.Registry
+	registry   *chain.Registry
 	broadcasts store.BroadcastStore
 	confirms   store.ConfirmationStore
 	prepay     *prepayment.Manager
@@ -72,12 +72,13 @@ func NewService(reg *chain.Registry, b store.BroadcastStore, c store.Confirmatio
 
 // Request is the input to Broadcast.
 type Request struct {
-	ChainID  string `json:"chain_id"`
-	SignedTx []byte `json:"signed_tx"`
-	From     string `json:"from"`
-	To       string `json:"to"`
-	Value    string `json:"value"`
-	Nonce    uint64 `json:"nonce"`
+	ChainID     string `json:"chain_id"`
+	SignedTx    []byte `json:"signed_tx"`
+	From        string `json:"from"`
+	WalletID    string `json:"wallet_id"`
+	To          string `json:"to"`
+	Value       string `json:"value"`
+	Nonce       uint64 `json:"nonce"`
 	SubmittedBy string `json:"submitted_by"`
 }
 
@@ -125,7 +126,7 @@ func (s *Service) Broadcast(ctx context.Context, req *Request) (*Response, error
 		if fee != nil && fee.TotalFee != nil {
 			feeAmt = fee.TotalFee
 		}
-		res, err := s.prepay.EnsureFundsAndNonce(ctx, adapter, req.From, feeAmt)
+		res, err := s.prepay.EnsureFundsAndNonce(ctx, adapter, req.WalletID, req.From, feeAmt)
 		if err != nil {
 			return nil, err
 		}
@@ -172,13 +173,13 @@ func (s *Service) Broadcast(ctx context.Context, req *Request) (*Response, error
 	// Emit tx.broadcasted event.
 	if s.bus != nil {
 		_ = s.bus.Emit(ctx, eventbus.Event{
-			Type:    "tx.broadcasted",
-			ChainID: req.ChainID,
-			TxHash:  hash,
-			From:    req.From,
-			To:      req.To,
-			Value:   req.Value,
-			Status:  chain.StatusBroadcast,
+			Type:      "tx.broadcasted",
+			ChainID:   req.ChainID,
+			TxHash:    hash,
+			From:      req.From,
+			To:        req.To,
+			Value:     req.Value,
+			Status:    chain.StatusBroadcast,
 			EmittedAt: time.Now(),
 		})
 	}

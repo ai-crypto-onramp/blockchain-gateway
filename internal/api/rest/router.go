@@ -59,11 +59,12 @@ func healthz(w http.ResponseWriter, _ *http.Request) {
 }
 
 type broadcastReq struct {
-	SignedTx   string `json:"signed_tx"`
-	From       string `json:"from"`
-	To         string `json:"to"`
-	Value      string `json:"value"`
-	Nonce      uint64 `json:"nonce"`
+	SignedTx    string `json:"signed_tx"`
+	From        string `json:"from"`
+	WalletID    string `json:"wallet_id"`
+	To          string `json:"to"`
+	Value       string `json:"value"`
+	Nonce       uint64 `json:"nonce"`
 	SubmittedBy string `json:"submitted_by"`
 }
 
@@ -92,6 +93,7 @@ func (d *Deps) handleBroadcast(w http.ResponseWriter, r *http.Request) {
 		ChainID:     chainID,
 		SignedTx:    signed,
 		From:        req.From,
+		WalletID:    req.WalletID,
 		To:          req.To,
 		Value:       req.Value,
 		Nonce:       req.Nonce,

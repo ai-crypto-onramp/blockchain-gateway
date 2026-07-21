@@ -39,18 +39,17 @@ import (
 	"github.com/ai-crypto-onramp/blockchain-gateway/internal/tip"
 	"github.com/ai-crypto-onramp/blockchain-gateway/internal/walletclient"
 	"github.com/segmentio/kafka-go"
-
 )
 
 // Config is the top-level app configuration loaded from env.
 type Config struct {
-	Port             string
-	WalletMgmtURL    string
-	EventBusURL      string
-	BroadcastTimeout time.Duration
+	Port              string
+	WalletMgmtURL     string
+	EventBusURL       string
+	BroadcastTimeout  time.Duration
 	BroadcastRetryMax int
-	ConfirmationPoll time.Duration
-	FeeRefresh       time.Duration
+	ConfirmationPoll  time.Duration
+	FeeRefresh        time.Duration
 }
 
 // LoadConfig reads configuration from the environment.
@@ -193,6 +192,7 @@ func Build(cfg Config) (*Server, error) {
 
 	// Tip followers per chain.
 	followers := make(map[string]*tip.Follower)
+	rebroadcaster := broadcast.NewRebroadcaster(registry, broadcastStore)
 	for _, c := range cfgs {
 		adapter, err := registry.Get(c.ChainID)
 		if err != nil {
@@ -200,7 +200,9 @@ func Build(cfg Config) (*Server, error) {
 		}
 		f := tip.NewFollower(adapter, tipStore, cfg.ConfirmationPoll)
 		f.SetConfirmer(confirmer)
-		f.SetDetector(&detectorAdapter{det: reorg.NewDetector(tipStore, reorgStore, confirmationStore, emitter)})
+		det := reorg.NewDetector(tipStore, reorgStore, confirmationStore, emitter)
+		det.SetRebroadcaster(rebroadcaster)
+		f.SetDetector(&detectorAdapter{det: det})
 		followers[c.ChainID] = f
 	}
 	// Stub follower so WS /v1/chains/stub/heads works in tests.
@@ -467,15 +469,15 @@ func (s *kafkaAuditSink) publish(ctx context.Context, evt eventbus.Event) error 
 	}
 	envelope := map[string]any{
 		"schema_version": "1",
-		"id":              id,
-		"ts":              evt.EmittedAt.UTC().Format(time.RFC3339Nano),
-		"source_service":  "blockchain-gateway",
-		"actor_id":        "blockchain-gateway",
-		"action":          string(evt.Type),
-		"target_type":     "transaction",
-		"target_id":       evt.TxHash,
-		"payload_hash":    payloadHash,
-		"payload":         json.RawMessage(payload),
+		"id":             id,
+		"ts":             evt.EmittedAt.UTC().Format(time.RFC3339Nano),
+		"source_service": "blockchain-gateway",
+		"actor_id":       "blockchain-gateway",
+		"action":         string(evt.Type),
+		"target_type":    "transaction",
+		"target_id":      evt.TxHash,
+		"payload_hash":   payloadHash,
+		"payload":        json.RawMessage(payload),
 	}
 	body, err := json.Marshal(envelope)
 	if err != nil {

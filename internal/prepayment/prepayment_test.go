@@ -2,6 +2,7 @@ package prepayment
 
 import (
 	"context"
+	"errors"
 	"math/big"
 	"sync"
 	"testing"
@@ -80,7 +81,7 @@ func TestCoordinatorNextNonceSeedsFromWallet(t *testing.T) {
 	ctx := context.Background()
 	mock := walletclient.NewMock("0xfund", 42)
 	n1, err := c.NextNonce(ctx, "ethereum", "0xabc", func(_ context.Context) (uint64, error) {
-		resp, err := mock.AllocateNonce(ctx, "ethereum", "0xabc")
+		resp, err := mock.AllocateNonce(ctx, "wallet-1", "ethereum")
 		if err != nil {
 			return 0, err
 		}
@@ -118,7 +119,7 @@ func TestCoordinatorNonceConcurrent(t *testing.T) {
 			}
 			defer release()
 			n, err := c.NextNonce(ctx, "ethereum", "0xabc", func(_ context.Context) (uint64, error) {
-				resp, err := mock.AllocateNonce(ctx, "ethereum", "0xabc")
+				resp, err := mock.AllocateNonce(ctx, "wallet-1", "ethereum")
 				if err != nil {
 					return 0, err
 				}
@@ -147,8 +148,18 @@ func TestManagerInsufficientFunds(t *testing.T) {
 	c := NewCoordinator(r, time.Minute, time.Second)
 	mock := walletclient.NewMock("0xfunding", 0)
 	mgr := NewManager(mock, c, time.Second)
-	stub := chain.NewStubAdapter(chain.StubAdapterOptions{ChainID: "ethereum", FinalityBlocks: 64, Balance: big.NewInt(0)})
-	res, err := mgr.EnsureFundsAndNonce(context.Background(), stub, "0xsender", big.NewInt(1_000_000_000))
+	mgr.SetFundingPollInterval(10 * time.Millisecond)
+	reg := chain.NewRegistry()
+	reg.Register(chain.NewStubAdapter(chain.StubAdapterOptions{ChainID: "ethereum", FinalityBlocks: 64, Balance: big.NewInt(0)}))
+	stub := reg.StubEmitter("ethereum")
+	// Seed the funding tx as already confirmed so the funding-wait loop
+	// returns immediately.
+	stub.SeedTx(
+		&chain.Tx{ChainID: "ethereum", Hash: "0xfunding", From: "0xsender", Status: chain.StatusConfirmed, BlockHeight: 1},
+		&chain.TxStatus{ChainID: "ethereum", TxHash: "0xfunding", Status: chain.StatusConfirmed, Confirmations: 1, BlockHeight: 1},
+	)
+	adapter, _ := reg.Get("ethereum")
+	res, err := mgr.EnsureFundsAndNonce(context.Background(), adapter, "wallet-1", "0xsender", big.NewInt(1_000_000_000))
 	if err != nil {
 		t.Fatalf("ensure: %v", err)
 	}
@@ -166,7 +177,7 @@ func TestManagerSufficientBalanceSkipsFunding(t *testing.T) {
 	mock := walletclient.NewMock("0xfunding", 5)
 	mgr := NewManager(mock, c, time.Second)
 	stub := chain.NewStubAdapter(chain.StubAdapterOptions{ChainID: "ethereum", FinalityBlocks: 64, Balance: big.NewInt(10_000_000_000)})
-	res, err := mgr.EnsureFundsAndNonce(context.Background(), stub, "0xsender", big.NewInt(1_000_000_000))
+	res, err := mgr.EnsureFundsAndNonce(context.Background(), stub, "wallet-1", "0xsender", big.NewInt(1_000_000_000))
 	if err != nil {
 		t.Fatalf("ensure: %v", err)
 	}
@@ -185,7 +196,7 @@ func TestManagerFundFailureShortCircuits(t *testing.T) {
 	mock.FundErr = errFailed
 	mgr := NewManager(mock, c, time.Second)
 	stub := chain.NewStubAdapter(chain.StubAdapterOptions{ChainID: "ethereum", FinalityBlocks: 64, Balance: big.NewInt(0)})
-	_, err := mgr.EnsureFundsAndNonce(context.Background(), stub, "0xsender", big.NewInt(1_000_000_000))
+	_, err := mgr.EnsureFundsAndNonce(context.Background(), stub, "wallet-1", "0xsender", big.NewInt(1_000_000_000))
 	if err == nil {
 		t.Fatal("expected error on fund failure")
 	}
@@ -198,3 +209,97 @@ type errStr string
 func (e errStr) Error() string { return string(e) }
 
 func newErr(s string) error { return errStr(s) }
+
+// fundingStatusStub is a ChainAdapter wrapper that returns a
+// configurable sequence of funding tx statuses so we can exercise the
+// polling loop in waitForFundingConfirmation.
+type fundingStatusStub struct {
+	chain.ChainAdapter
+	txHash   string
+	statuses []chain.TxStatus
+	calls    int
+}
+
+func (s *fundingStatusStub) GetTxStatus(_ context.Context, txHash string) (*chain.TxStatus, error) {
+	if txHash != s.txHash {
+		return nil, chain.ErrTxNotFound
+	}
+	if s.calls < len(s.statuses) {
+		st := s.statuses[s.calls]
+		s.calls++
+		return &st, nil
+	}
+	// Once we've exhausted the scripted statuses, return the last one
+	// forever (confirmed).
+	if len(s.statuses) > 0 {
+		st := s.statuses[len(s.statuses)-1]
+		return &st, nil
+	}
+	return nil, chain.ErrTxNotFound
+}
+
+// TestManagerWaitsForFundingConfirmation asserts the manager polls the
+// funding tx status until it reaches the required confirmation depth
+// before allocating the nonce.
+func TestManagerWaitsForFundingConfirmation(t *testing.T) {
+	r := NewMemRedis()
+	c := NewCoordinator(r, time.Minute, time.Second)
+	mock := walletclient.NewMock("0xfunding", 11)
+	mgr := NewManager(mock, c, 5*time.Second)
+	mgr.SetFundingPollInterval(5 * time.Millisecond)
+	mgr.SetFundingMinConfirms(1)
+	reg := chain.NewRegistry()
+	reg.Register(chain.NewStubAdapter(chain.StubAdapterOptions{ChainID: "ethereum", FinalityBlocks: 64, Balance: big.NewInt(0)}))
+	adapter, _ := reg.Get("ethereum")
+	stub := &fundingStatusStub{
+		ChainAdapter: adapter,
+		txHash:       "0xfunding",
+		// First poll: pending (not enough confirmations). Second poll:
+		// confirmed.
+		statuses: []chain.TxStatus{
+			{ChainID: "ethereum", TxHash: "0xfunding", Status: chain.StatusMempool, Confirmations: 0},
+			{ChainID: "ethereum", TxHash: "0xfunding", Status: chain.StatusConfirmed, Confirmations: 1, BlockHeight: 1},
+		},
+	}
+	res, err := mgr.EnsureFundsAndNonce(context.Background(), stub, "wallet-1", "0xsender", big.NewInt(1_000_000_000))
+	if err != nil {
+		t.Fatalf("ensure: %v", err)
+	}
+	if !res.Funded || res.FundingTx != "0xfunding" {
+		t.Errorf("funding: %+v", res)
+	}
+	if res.Nonce != 11 {
+		t.Errorf("nonce: %d want 11", res.Nonce)
+	}
+	if stub.calls < 2 {
+		t.Errorf("expected at least 2 status polls, got %d", stub.calls)
+	}
+}
+
+// TestManagerFundingTimeout asserts the manager returns ErrFundingTimeout
+// when the funding tx never confirms within fundingTimeout.
+func TestManagerFundingTimeout(t *testing.T) {
+	r := NewMemRedis()
+	c := NewCoordinator(r, time.Minute, time.Second)
+	mock := walletclient.NewMock("0xfunding", 11)
+	mgr := NewManager(mock, c, 50*time.Millisecond)
+	mgr.SetFundingPollInterval(5 * time.Millisecond)
+	reg := chain.NewRegistry()
+	reg.Register(chain.NewStubAdapter(chain.StubAdapterOptions{ChainID: "ethereum", FinalityBlocks: 64, Balance: big.NewInt(0)}))
+	adapter, _ := reg.Get("ethereum")
+	stub := &fundingStatusStub{
+		ChainAdapter: adapter,
+		txHash:       "0xfunding",
+		// Always pending — never confirms.
+		statuses: []chain.TxStatus{
+			{ChainID: "ethereum", TxHash: "0xfunding", Status: chain.StatusMempool, Confirmations: 0},
+		},
+	}
+	_, err := mgr.EnsureFundsAndNonce(context.Background(), stub, "wallet-1", "0xsender", big.NewInt(1_000_000_000))
+	if err == nil {
+		t.Fatal("expected funding timeout error")
+	}
+	if !errors.Is(err, ErrFundingTimeout) {
+		t.Errorf("expected ErrFundingTimeout, got %v", err)
+	}
+}

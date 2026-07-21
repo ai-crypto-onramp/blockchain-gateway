@@ -17,6 +17,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/shopspring/decimal"
 )
 
 // rpcClient is a minimal JSON-RPC client shared by the EVM/Solana/Bitcoin
@@ -464,11 +466,11 @@ func (b *BitcoinAdapter) Balance(ctx context.Context, addr string) (*big.Int, er
 	if err != nil {
 		return nil, err
 	}
-	var v float64
-	if err := json.Unmarshal(res, &v); err != nil {
+	var btc decimal.Decimal
+	if err := json.Unmarshal(res, &btc); err != nil {
 		return nil, err
 	}
-	sat := new(big.Int).SetUint64(uint64(v * 1e8))
+	sat := btc.Mul(decimal.NewFromInt(1e8)).BigInt()
 	return sat, nil
 }
 
@@ -486,7 +488,7 @@ func (b *BitcoinAdapter) EstimateFee(ctx context.Context, req FeeEstimateReq) (*
 		return nil, err
 	}
 	var resp struct {
-		FeeRate float64 `json:"feerate"`
+		FeeRate decimal.Decimal `json:"feerate"`
 	}
 	if err := json.Unmarshal(res, &resp); err != nil {
 		return nil, err
@@ -494,16 +496,16 @@ func (b *BitcoinAdapter) EstimateFee(ctx context.Context, req FeeEstimateReq) (*
 	if req.Priority == "" {
 		req.Priority = PriorityStandard
 	}
-	mult := 1.0
+	mult := decimal.NewFromInt(1)
 	switch req.Priority {
 	case PriorityLow:
-		mult = 0.8
+		mult = decimal.NewFromFloat(0.8)
 	case PriorityHigh:
-		mult = 1.5
+		mult = decimal.NewFromFloat(1.5)
 	}
-	rate := resp.FeeRate * mult
-	satPerByte := rate * 1e5 // BTC/kB -> sat/byte (approx)
-	gp := new(big.Int).SetUint64(uint64(satPerByte))
+	rate := resp.FeeRate.Mul(mult)
+	satPerByte := rate.Mul(decimal.NewFromInt(1e5)) // BTC/kB -> sat/byte (approx)
+	gp := satPerByte.BigInt()
 	return &FeeEstimate{ChainID: b.chainID, Priority: req.Priority, GasPrice: gp, TotalFee: new(big.Int).Mul(gp, big.NewInt(250)), Strategy: b.cfg.GasStrategy}, nil
 }
 
